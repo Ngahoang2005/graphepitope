@@ -31,6 +31,7 @@ parser.add_argument('--epochs', type=int, default=300, help='max number of epoch
 parser.add_argument('--dataset', type=str, default='BCE_633', help='dataset name.')
 parser.add_argument('--logger', type=str, default='./log', help='logger path.')
 parser.add_argument('--tag', type=str, default='GraphBepi', help='logger name.')
+parser.add_argument('--root', type=str, default='', help='root path.')
 args = parser.parse_args()
 
 device='cpu' if args.gpu==-1 else f'cuda:{args.gpu}'
@@ -62,6 +63,7 @@ model=GraphBepi(
 )
 
 es=EarlyStopping('val_AUPRC',patience=40,mode='max')
+
 mc=ModelCheckpoint(
     f'./model/{log_name}/',f'model_{args.fold}',
     'val_AUPRC',
