@@ -139,8 +139,8 @@ class GraphBepi(pl.LightningModule):
         self.log('train_loss', loss.cpu().item(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         if self.metrics is not None:
             result=self.metrics.calc_prc(pred.detach().clone(),y.detach().clone())
-            self.log('train_auc', result['AUROC'], on_epoch=True, prog_bar=True, logger=True)
-            self.log('train_prc', result['AUPRC'], on_epoch=True, prog_bar=True, logger=True)
+            self.log('train_auc', result['AUROC'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log('train_prc', result['AUPRC'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -177,7 +177,7 @@ class GraphBepi(pl.LightningModule):
         self.val_preds.clear(); self.val_labels.clear()
 
         loss = self.loss_fn(pred, y.float())
-        self.log('val_loss', loss.cpu().item(), on_epoch=True, prog_bar=True, logger=True)
+        self.log('val_loss', loss.cpu().item(),on_step=False, on_epoch=True, prog_bar=True, logger=True)
 
         if self.metrics is not None:
             result = self.metrics(pred.detach().clone(), y.detach().clone())
