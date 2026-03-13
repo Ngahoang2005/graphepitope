@@ -150,7 +150,7 @@ class GraphBepi(pl.LightningModule):
         self.val_labels.append(y.detach())
         # log loss theo step (tùy chọn)
         loss = self.loss_fn(pred, y.float())
-        self.log('val_step_loss', loss.detach().cpu().item(), on_step=True, on_epoch=False)
+        #self.log('val_step_loss', loss.detach().cpu().item(), on_step=False, on_epoch=False)
         return
     # def validation_epoch_end(self,outputs):
     #     pred,y=[],[]
