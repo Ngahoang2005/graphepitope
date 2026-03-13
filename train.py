@@ -27,7 +27,7 @@ parser.add_argument('--fold', type=int, default=-1, help='dataset fold. set it -
 parser.add_argument('--seed', type=int, default=2022, help='random seed.')
 parser.add_argument('--batch', type=int, default=4, help='batch size.')
 parser.add_argument('--hidden', type=int, default=256, help='hidden dim.')
-parser.add_argument('--epochs', type=int, default=300, help='max number of epochs.')
+parser.add_argument('--epochs', type=int, default=120, help='max number of epochs.')
 parser.add_argument('--dataset', type=str, default='BCE_633', help='dataset name.')
 parser.add_argument('--logger', type=str, default='./log', help='logger path.')
 parser.add_argument('--tag', type=str, default='GraphBepi', help='logger name.')
