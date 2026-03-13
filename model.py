@@ -181,10 +181,10 @@ class GraphBepi(pl.LightningModule):
 
         if self.metrics is not None:
             result = self.metrics(pred.detach().clone(), y.detach().clone())
-            self.log('val_AUROC', result['AUROC'], on_epoch=True, prog_bar=True, logger=True)
-            self.log('val_AUPRC', result['AUPRC'], on_epoch=True, prog_bar=True, logger=True)
-            self.log('val_mcc',   result['MCC'],   on_epoch=True, prog_bar=True, logger=True)
-            self.log('val_f1',    result['F1'],    on_epoch=True, prog_bar=True, logger=True)
+            self.log('val_AUROC', result['AUROC'],on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log('val_AUPRC', result['AUPRC'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log('val_mcc',   result['MCC'],   on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log('val_f1',    result['F1'],    on_step=False, on_epoch=True, prog_bar=True, logger=True)
 
     def test_step(self, batch, batch_idx):
         feat, edge, y = batch
@@ -233,15 +233,15 @@ class GraphBepi(pl.LightningModule):
 
         if self.metrics is not None:
             result = self.metrics(pred.detach().clone(), y.detach().clone())
-            self.log('test_loss',      loss.cpu().item(), on_epoch=True, prog_bar=True, logger=True)
-            self.log('test_AUROC',     result['AUROC'],   on_epoch=True, prog_bar=True, logger=True)
-            self.log('test_AUPRC',     result['AUPRC'],   on_epoch=True, prog_bar=True, logger=True)
-            self.log('test_recall',    result['RECALL'],  on_epoch=True, prog_bar=True, logger=True)
-            self.log('test_precision', result['PRECISION'], on_epoch=True, prog_bar=True, logger=True)
-            self.log('test_f1',        result['F1'],      on_epoch=True, prog_bar=True, logger=True)
-            self.log('test_mcc',       result['MCC'],     on_epoch=True, prog_bar=True, logger=True)
-            self.log('test_bacc',      result['BACC'],    on_epoch=True, prog_bar=True, logger=True)
-            self.log('test_threshold', result['threshold'], on_epoch=True, prog_bar=True, logger=True)
+            self.log('test_loss',      loss.cpu().item(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log('test_AUROC',     result['AUROC'],   on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log('test_AUPRC',     result['AUPRC'],   on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log('test_recall',    result['RECALL'],  on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log('test_precision', result['PRECISION'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log('test_f1',        result['F1'],      on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log('test_mcc',       result['MCC'],     on_step=False, on_epoch=True, prog_bar=True, logger=True)
+            self.log('test_bacc',      result['BACC'],    on_step=False,on_epoch=True, prog_bar=True, logger=True)
+            self.log('test_threshold', result['threshold'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), betas=(0.9, 0.99), lr=self.lr, weight_decay=1e-5, eps=1e-5)
