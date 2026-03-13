@@ -185,6 +185,12 @@ class GraphBepi(pl.LightningModule):
             self.log('val_AUPRC', result['AUPRC'], on_step=False, on_epoch=True, prog_bar=False, logger=True)
             self.log('val_mcc',   result['MCC'],   on_step=False, on_epoch=True, prog_bar=False, logger=True)
             self.log('val_f1',    result['F1'],    on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        print(
+            f"Epoch {self.current_epoch} | "
+            f"val_loss {loss:.4f} | "
+            f"AUROC {result['AUROC']:.4f} | "
+            f"AUPRC {result['AUPRC']:.4f}"
+        )
 
     def test_step(self, batch, batch_idx):
         feat, edge, y = batch
