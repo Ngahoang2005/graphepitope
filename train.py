@@ -76,9 +76,12 @@ logger = TensorBoardLogger(
 )
 cb=[mc,es]
 trainer = pl.Trainer(
-    gpus=[args.gpu] if args.gpu!=-1 else None, 
-    max_epochs=args.epochs, callbacks=cb,
-    logger=logger,check_val_every_n_epoch=1,
+    accelerator="cpu" if args.gpu==-1 else "gpu",
+    devices=1 if args.gpu!=-1 else None,
+    max_epochs=args.epochs,
+    callbacks=cb,
+    logger=logger,
+    check_val_every_n_epoch=1,
 )
 
 if os.path.exists(f'./model/{log_name}/model_{args.fold}.ckpt'):
@@ -87,6 +90,10 @@ trainer.fit(model, train_loader, val_loader)
 model.load_state_dict(
     torch.load(f'./model/{log_name}/model_{args.fold}.ckpt')['state_dict'],
 )
-trainer = pl.Trainer(gpus=[args.gpu],logger=None)
+trainer = pl.Trainer(
+    accelerator="cpu" if args.gpu==-1 else "gpu",
+    devices=1 if args.gpu!=-1 else None,
+    logger=None
+)
 result = trainer.test(model,test_loader)
 os.rename(f'./model/{log_name}/result.pkl',f'./model/{log_name}/result_{args.fold}.pkl')
