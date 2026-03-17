@@ -1,3 +1,4 @@
+#utils.py
 import os
 import torch
 import numpy as np
@@ -8,15 +9,7 @@ import torch.nn.functional as F
 from tqdm import tqdm,trange
 from preprocess import *
 from graph_construction import calcPROgraph
-# prot_amino2id={
-#     '<pad>': 0, '</s>': 1, '<unk>': 2, 'A': 3,
-#     'L': 4, 'G': 5, 'V': 6, 'S': 7,
-#     'R': 8, 'E': 9, 'D': 10, 'T': 11,
-#     'I': 12, 'P': 13, 'K': 14, 'F': 15,
-#     'Q': 16, 'N': 17, 'Y': 18, 'M': 19,
-#     'H': 20, 'W': 21, 'C': 22, 'X': 23,
-#     'B': 24, 'O': 25, 'U': 26, 'Z': 27
-# }
+
 amino2id={
     '<null_0>': 0, '<pad>': 1, '<eos>': 2, '<unk>': 3,
     'L': 4, 'A': 5, 'G': 6, 'V': 7, 'S': 8, 'E': 9, 'R': 10, 
@@ -75,11 +68,9 @@ class chain:
         self.feat=torch.load(f'{path}/feat/{self.name}_esm2.ts')
     def load_adj(self,path,self_cycle=False):
         graph=torch.load(f'{path}/graph/{self.name}.graph')
-        self.adj=graph['adj'].to_dense()
-        self.edge=graph['edge'].to_dense()
-        if not self_cycle:
-            self.adj[range(len(self)),range(len(self))]=0
-            self.edge[range(len(self)),range(len(self))]=0
+        self.edge_index = graph['edge_index']
+        self.edge_attr = graph['edge_attr']
+        self.pos = graph['pos']
     def get_adj(self,path,dseq=3,dr=10,dlong=5,k=10):
         graph=calcPROgraph(self.sequence,self.coord,dseq,dr,dlong,k)
         torch.save(graph,f'{path}/graph/{self.name}.graph')
@@ -110,10 +101,12 @@ class chain:
     def __getitem__(self,idx):
         return self.amino[idx],self.coord[idx],self.label[idx]
 def collate_fn(batch):
-    edges = [item['edge'] for item in batch]
     feats = [item['feat'] for item in batch]
-    labels = torch.cat([item['label'] for item in batch],0)
-    return feats,edges,labels
+    edge_attrs = [item['edge_attr'] for item in batch]
+    edge_indices = [item['edge_index'] for item in batch]
+    poss = [item['pos'] for item in batch]
+    labels = torch.cat([item['label'] for item in batch], 0)
+    return feats, edge_attrs, edge_indices, poss, labels
 
 def extract_chain(root,pid,chain,force=False):
     if not force and os.path.exists(f'{root}/purePDB/{pid}_{chain}.pdb'):
@@ -199,3 +192,73 @@ def initial(file,root,model=None,device='cpu',from_native_pdb=True):
             samples.append(data)
     with open(f'{root}/total.pkl','wb') as f:
         pk.dump(samples,f)
+def initial_epitope3D(file, root, model=None, device='cpu', from_native_pdb=True):
+    df = pd.read_csv(f'{root}/{file}', header=0)
+    samples = []
+    with tqdm(range(len(df))) as tbar:
+        for idx in tbar:
+
+            row = df.iloc[idx]
+            pdb_id = row['PDB ID']
+            label_raw = row['Epitope List (residueid_residuename_chain)']
+
+            if pd.isna(label_raw):
+                continue
+
+            # Gom label theo chain
+            chain_labels = {}
+
+            labels = label_raw.split(', ')
+            for item in labels:
+                # 148_GLN_A
+                parts = item.split('_')
+                if len(parts) != 3:
+                    continue
+
+                site, amino, chain_id = parts
+
+                if chain_id not in chain_labels:
+                    chain_labels[chain_id] = []
+
+                chain_labels[chain_id].append(f"{site}_{amino}")
+
+            for chain_id, label_list in chain_labels.items():
+
+                name = f"{pdb_id}_{chain_id}"
+                tbar.set_postfix(protein=name)
+
+                if from_native_pdb:
+                    state = extract_chain(root, pdb_id, chain_id)
+                    if not state:
+                        continue
+
+                data = chain()
+
+                data.protein_name = pdb_id
+                data.chain_name = chain_id
+                data.name = name
+
+                process_chain(data, root, name, model, device)
+
+                # ---- đảm bảo lấy date từ HEADER ----
+                if data.date == '' or data.date is None:
+                    try:
+                        with open(f"{root}/PDB/{pdb_id}.pdb", "r") as f:
+                            for line in f:
+                                if line.startswith("HEADER"):
+                                    data.date = line[50:59].strip()
+                                    break
+                    except:
+                        data.date = ''
+
+                for j in label_list:
+                    site, amino = j.split('_')
+                    data.update(site, amino)
+
+                samples.append(data)
+
+    output_name = file.replace(".csv", ".pkl")
+    with open(f'{root}/{output_name}', 'wb') as f:
+        pk.dump(samples, f)
+
+    return samples
