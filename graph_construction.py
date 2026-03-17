@@ -26,6 +26,8 @@ def calcPROgraph(seq, coord, dseq=3, dr=10, dlong=5, k=10):
 
     for i in range(nodes):
         for j in range(nodes):
+            if i == j:                  
+                continue
             not_edge = True
             dij_seq = abs(i - j)
 
