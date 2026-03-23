@@ -132,10 +132,10 @@ class GraphBepi(pl.LightningModule):
 
         if self.metrics is not None:
             result = self.metrics(pred, y)
-            self.log('val_AUROC', result['AUROC'], prog_bar=True)
-            self.log('val_AUPRC', result['AUPRC'], prog_bar=True)
-            self.log('val_mcc',   result['MCC'],   prog_bar=True)
-            self.log('val_f1',    result['F1'],    prog_bar=True)
+            self.log('val_AUROC', result['AUROC'])
+            self.log('val_AUPRC', result['AUPRC'])
+            self.log('val_mcc',   result['MCC'])
+            self.log('val_f1',    result['F1'])
             print(f"Epoch {self.current_epoch}: val_loss={loss:.4f}, AUPRC={result['AUPRC']:.4f}, AUROC={result['AUROC']:.4f}")
 
     def test_step(self, batch, batch_idx):
