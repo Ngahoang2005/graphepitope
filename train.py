@@ -91,6 +91,7 @@ trainer = pl.Trainer(
     logger=logger,
     check_val_every_n_epoch=1,
     enable_progress_bar=False,  # Tắt progress bar để giảm log
+    log_every_n_steps=1,  # Log mỗi step để debug
 )
 
 if os.path.exists(f'./model/{log_name}/model_{args.fold}.ckpt'):
