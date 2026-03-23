@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from torch.nn.utils.rnn import pad_sequence
-from EGNN import EGNN   # ← Equivariant GNN (file mới)
+from SE3Transformer import SE3TransformerWrapper   # ← SE(3)-Transformer
 
 class PULoss(nn.Module):
     """PU Loss (Positive-Unlabeled) – xử lý imbalance epitope (~9-11%)"""
@@ -51,8 +51,8 @@ class GraphBepi(pl.LightningModule):
         # ================== LAYERS (chỉ giữ graph branch) ==================
         self.W_v = nn.Linear(feat_dim, hidden_dim)          # ESM-2 projection
         self.W_u = nn.Linear(exfeat_dim, hidden_dim)        # DSSP projection
-        self.egnn = EGNN(2 * hidden_dim, hidden_dim, edge_dim=51, dropout=dropout,
-                         attention=True, ffn=True, batch_norm=False)  # Bật attention và FFN để phức tạp hơn
+        self.egnn = SE3TransformerWrapper(2 * hidden_dim, hidden_dim, edge_dim=51, dropout=dropout,
+                                          num_layers=2, num_heads=4)  # SE(3)-Transformer với 2 layers, 4 heads
 
         # ================== OUTPUT HEAD ==================
         self.mlp = nn.Sequential(

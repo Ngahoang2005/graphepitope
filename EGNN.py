@@ -2,8 +2,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_scatter import scatter
-from torch_geometric.nn import InstanceNorm
+# from torch_scatter import scatter  # Comment out to avoid dependency
+# from torch_geometric.nn import InstanceNorm  # Comment out
 
 class EGNN(nn.Module):
     def __init__(self, in_dim=512, hidden_dim=256, edge_dim=51, 
@@ -21,6 +21,22 @@ class EGNN(nn.Module):
         self.epsilon = 1e-8
         self.ffn = ffn
         self.batch_norm = batch_norm
+
+    def __init__(self, in_dim=512, hidden_dim=256, edge_dim=51, 
+                 dropout=0.2, residual=True, attention=False, 
+                 normalize=False, coords_agg='sum', tanh=False,  # Changed to 'sum' for index_add_
+                 ffn=False, batch_norm=False):
+        super().__init__()
+        self.in_dim = in_dim          # 512
+        self.hidden_dim = hidden_dim  # 256
+        self.residual = residual
+        self.attention = attention
+        self.normalize = normalize
+        self.coords_agg = coords_agg
+        self.tanh = tanh
+        self.epsilon = 1e-8
+        self.ffn = ffn
+        self.batch_norm = batch_norm  # Set to False
 
         # === SỬA Ở ĐÂY: Edge MLP phải output ra in_dim (512) ===
         in_edge = in_dim * 2 + edge_dim + 1
@@ -51,10 +67,10 @@ class EGNN(nn.Module):
             nn.Linear(hidden_dim, hidden_dim)
         )
 
-        # Batch normalization (per-graph)
-        if batch_norm:
-            self.norm_node = InstanceNorm(hidden_dim, affine=True)
-            self.norm_coord = InstanceNorm(3, affine=True)
+        # Batch normalization (commented out)
+        # if batch_norm:
+        #     self.norm_node = InstanceNorm(hidden_dim, affine=True)
+        #     self.norm_coord = InstanceNorm(3, affine=True)
 
         # FFN
         if ffn:
@@ -62,9 +78,9 @@ class EGNN(nn.Module):
             self.ff2 = nn.Linear(hidden_dim * 2, hidden_dim)
             self.act_ff = nn.SiLU()
             self.drop_ff = nn.Dropout(dropout)
-            if batch_norm:
-                self.norm_ff1 = InstanceNorm(hidden_dim, affine=True)
-                self.norm_ff2 = InstanceNorm(hidden_dim, affine=True)
+            # if batch_norm:
+            #     self.norm_ff1 = InstanceNorm(hidden_dim, affine=True)
+            #     self.norm_ff2 = InstanceNorm(hidden_dim, affine=True)
 
     def coord2radial(self, edge_index, coord):
         row, col = edge_index
@@ -107,35 +123,34 @@ class EGNN(nn.Module):
         # Check for NaN/Inf in coordinate updates
         trans = torch.where(torch.isfinite(trans), trans, torch.zeros_like(trans))
         
-        agg_coord = scatter(trans, row, dim=0,
-                            dim_size=pos.size(0),
-                            reduce=self.coords_agg)
+        agg_coord = torch.zeros_like(pos)
+        agg_coord.index_add_(0, row, trans)
         pos = pos + agg_coord
         
         # Check for NaN/Inf in final coordinates
         pos = torch.where(torch.isfinite(pos), pos, torch.zeros_like(pos))
         
-        if self.batch_norm:
-            # For single graph, batch is all zeros
-            batch = torch.zeros(pos.size(0), dtype=torch.long, device=pos.device)
-            pos = self.norm_coord(pos, batch)
+        # if self.batch_norm:
+        #     # For single graph, batch is all zeros
+        #     batch = torch.zeros(pos.size(0), dtype=torch.long, device=pos.device)
+        #     pos = self.norm_coord(pos, batch)
 
         # -- node update --
-        agg_node = scatter(e, row, dim=0,
-                           dim_size=h.size(0), reduce='sum')
+        agg_node = torch.zeros_like(h)
+        agg_node.index_add_(0, row, e)
         x_in = torch.cat([h, agg_node], dim=-1)
         h_new = self.node_mlp(x_in)
-        if self.batch_norm:
-            h_new = self.norm_node(h_new, batch)
+        # if self.batch_norm:
+        #     h_new = self.norm_node(h_new, batch)
         if self.residual and h_new.shape[-1] == h.shape[-1]:
             h_new = h + h_new
 
         # -- optional FFN --
         if self.ffn:
-            if self.batch_norm:
-                h_new = self.norm_ff1(h_new, batch)
+            # if self.batch_norm:
+            #     h_new = self.norm_ff1(h_new, batch)
             h_new = h_new + self._ff_block(h_new)
-            if self.batch_norm:
-                h_new = self.norm_ff2(h_new, batch)
+            # if self.batch_norm:
+            #     h_new = self.norm_ff2(h_new, batch)
 
         return h_new, pos
