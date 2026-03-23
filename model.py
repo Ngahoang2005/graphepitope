@@ -81,7 +81,7 @@ class GraphBepi(pl.LightningModule):
             x = torch.cat([esm_proj, dssp_proj], dim=-1)
 
             # Equivariant GNN + position (tọa độ Cα)
-            x = self.egnn(x, edge_index, edge_attr, pos)
+            x, _ = self.egnn(x, edge_index, edge_attr, pos)
             outs.append(x)
 
         h = torch.cat(outs, dim=0)          # [total_residues, hidden_dim]
@@ -99,7 +99,7 @@ class GraphBepi(pl.LightningModule):
                 esm_proj = self.W_v(V[:, :-self.exfeat_dim])
                 dssp_proj = self.W_u(V[:, -self.exfeat_dim:])
                 x = torch.cat([esm_proj, dssp_proj], dim=-1)
-                x = self.egnn(x, edge_index, edge_attr, pos)
+                x, _ = self.egnn(x, edge_index, edge_attr, pos)
                 outs.append(x)
         if was_train:
             self.train()
