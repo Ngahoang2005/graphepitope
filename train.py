@@ -81,10 +81,7 @@ mc=ModelCheckpoint(
     mode='max',
     save_weights_only=True, 
 )
-logger = TensorBoardLogger(
-    args.logger, 
-    name=log_name+f'_{args.fold}'
-)
+logger = None
 cb=[mc,es]
 trainer = pl.Trainer(
     accelerator="cpu" if args.gpu==-1 else "gpu",
