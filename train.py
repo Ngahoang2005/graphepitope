@@ -10,7 +10,7 @@ import pytorch_lightning as pl
 from tool import METRICS
 from model import GraphBepi
 from dataset import PDB,collate_fn,chain
-from torch.utils.data import DataLoader,Dataset
+from torch.utils.data import DataLoader,Dataset,random_split
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import Callback,EarlyStopping,ModelCheckpoint
 warnings.simplefilter('ignore')
@@ -43,11 +43,18 @@ trainset=PDB(mode='train',fold=args.fold,root=root)
 valset=PDB(mode='val',fold=args.fold,root=root)
 testset=PDB(mode='test',fold=args.fold,root=root)
 
-train_loader=DataLoader(trainset,batch_size=args.batch,shuffle=True,collate_fn=collate_fn,drop_last=True)
-val_loader=DataLoader(valset,batch_size=args.batch,shuffle=False,collate_fn=collate_fn)
+if args.fold == -1:
+    # Split trainset into train and val (80% train, 20% val)
+    train_size = int(0.8 * len(trainset))
+    val_size = len(trainset) - train_size
+    train_subset, val_subset = random_split(trainset, [train_size, val_size])
+    train_loader = DataLoader(train_subset, batch_size=args.batch, shuffle=True, collate_fn=collate_fn, drop_last=True)
+    val_loader = DataLoader(val_subset, batch_size=args.batch, shuffle=False, collate_fn=collate_fn)
+else:
+    train_loader = DataLoader(trainset, batch_size=args.batch, shuffle=True, collate_fn=collate_fn, drop_last=True)
+    val_loader = DataLoader(valset, batch_size=args.batch, shuffle=False, collate_fn=collate_fn)
+
 test_loader=DataLoader(testset,batch_size=args.batch,shuffle=False,collate_fn=collate_fn)
-if args.fold==-1:
-    val_loader=test_loader
     
 log_name=f'{args.dataset}_{args.tag}'
 metrics=METRICS(device)
