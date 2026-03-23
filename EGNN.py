@@ -25,7 +25,7 @@ class EGNN(nn.Module):
         )
 
         # 2. Coord MLP (Dùng để dịch chuyển toạ độ 3D)
-        layer = nn.Linear(in_dim, 1, bias=False)
+        layer = nn.Linear(hidden_dim, 1, bias=False)
         nn.init.xavier_uniform_(layer.weight, gain=0.001)
         self.coord_mlp = nn.Sequential(
             nn.Linear(in_dim, hidden_dim),
