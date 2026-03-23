@@ -24,7 +24,7 @@ def seed_everything(seed=2022):
 parser = argparse.ArgumentParser()
 parser.add_argument('--lr', type=float, default=1e-6, help='learning rate.')
 parser.add_argument('--gpu', type=int, default=0, help='gpu.')
-parser.add_argument('--fold', type=int, default=-1, help='dataset fold. set it -1 to use the whole trainset')
+parser.add_argument('--fold', type=int, default=1, help='dataset fold. set it -1 to use the whole trainset')
 parser.add_argument('--seed', type=int, default=2022, help='random seed.')
 parser.add_argument('--batch', type=int, default=4, help='batch size.')
 parser.add_argument('--hidden', type=int, default=256, help='hidden dim.')
@@ -93,7 +93,7 @@ trainer = pl.Trainer(
     callbacks=cb,
     logger=logger,
     check_val_every_n_epoch=1,
-    enable_progress_bar=False,  # Tắt progress bar để giảm log
+    enable_progress_bar=True,  # Tắt progress bar để giảm log
     log_every_n_steps=1,  # Log mỗi step để debug
 )
 
