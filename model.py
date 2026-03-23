@@ -51,7 +51,8 @@ class GraphBepi(pl.LightningModule):
         # ================== LAYERS (chỉ giữ graph branch) ==================
         self.W_v = nn.Linear(feat_dim, hidden_dim)          # ESM-2 projection
         self.W_u = nn.Linear(exfeat_dim, hidden_dim)        # DSSP projection
-        self.egnn = EGNN(2 * hidden_dim, hidden_dim, edge_dim=51, dropout=dropout)
+        self.egnn = EGNN(2 * hidden_dim, hidden_dim, edge_dim=51, dropout=dropout,
+                         attention=True, ffn=True, batch_norm=False)  # Bật attention và FFN để phức tạp hơn
 
         # ================== OUTPUT HEAD ==================
         self.mlp = nn.Sequential(
