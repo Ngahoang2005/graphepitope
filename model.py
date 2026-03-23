@@ -1,13 +1,12 @@
-# model.py (phiên bản hoàn chỉnh sau khi sửa)
+# model.py
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
-from torch.nn.utils.rnn import pad_sequence
 from EGNN import EGNN   
 
 class PULoss(nn.Module):
     """PU Loss (Positive-Unlabeled) – xử lý imbalance epitope (~9-11%)"""
-    def __init__(self, prior=0.1):          # prior = tỷ lệ positive trong dataset
+    def __init__(self, prior=0.9):          # <-- ĐÃ SỬA prior=0.9 ĐỂ ƯU TIÊN EPITOPE
         super().__init__()
         self.prior = prior
 
@@ -30,7 +29,8 @@ class GraphBepi(pl.LightningModule):
         edge_dim=51, 
         augment_eps=0.05, 
         dropout=0.2, 
-        lr=1e-6, 
+        lr=1e-3,            # <-- ĐÃ TĂNG LR ĐỂ MODEL HỌC ĐƯỢC
+        num_egnn_layers=4,  # <-- CẤU HÌNH SỐ LỚP EGNN (Xếp chồng)
         metrics=None, 
         result_path=None
     ):
@@ -43,30 +43,42 @@ class GraphBepi(pl.LightningModule):
         self.test_labels = []
 
         # ================== LOSS & HYPERPARAMS ==================
-        self.loss_fn = PULoss(prior=0.1)          # ← PU Loss thay vì BCELoss
+        self.loss_fn = PULoss(prior=0.9)  
         self.exfeat_dim = exfeat_dim
         self.augment_eps = augment_eps
         self.lr = lr
 
-        # ================== LAYERS (chỉ giữ graph branch) ==================
+        # ================== LAYERS ==================
         self.W_v = nn.Linear(feat_dim, hidden_dim)          # ESM-2 projection
         self.W_u = nn.Linear(exfeat_dim, hidden_dim)        # DSSP projection
-        self.egnn = EGNN(2 * hidden_dim, hidden_dim, edge_dim=51, dropout=dropout)
+        
+        # Đặc trưng sau khi nối ESM-2 và DSSP sẽ có số chiều là 2 * hidden_dim
+        in_dim = 2 * hidden_dim
+        
+        # Khai báo ModuleList để xếp chồng (stacking) nhiều lớp EGNN
+        self.egnn_layers = nn.ModuleList([
+            EGNN(in_dim=in_dim, hidden_dim=hidden_dim, edge_dim=edge_dim, dropout=dropout, residual=True)
+            for _ in range(num_egnn_layers)
+        ])
 
         # ================== OUTPUT HEAD ==================
+        # Sử dụng GELU thay vì ReLU giúp gradient mượt hơn với các mạng sâu
         self.mlp = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
             nn.Linear(hidden_dim, hidden_dim // 2),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(hidden_dim // 2, 1),
             nn.Sigmoid()
         )
 
-        # Initialization
+        # Khởi tạo trọng số (Initialization)
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    # ===================== FORWARD (chỉ EGNN) =====================
+    # ===================== FORWARD =====================
     def forward(self, feats, edge_attrs, edge_indices, poss):
         """
         feats: list of [L_i x (2560+13)]
@@ -75,21 +87,24 @@ class GraphBepi(pl.LightningModule):
         outs = []
         for V, edge_attr, edge_index, pos in zip(feats, edge_attrs, edge_indices, poss):
             V = V.float()
+            
             # Project features
             esm_proj = self.W_v(V[:, :-self.exfeat_dim])
             dssp_proj = self.W_u(V[:, -self.exfeat_dim:])
             x = torch.cat([esm_proj, dssp_proj], dim=-1)
 
-            # Equivariant GNN + position (tọa độ Cα)
-            x, _ = self.egnn(x, edge_index, edge_attr, pos)
+            # Chạy qua lần lượt từng lớp EGNN (Cập nhật cả node x và toạ độ pos)
+            for egnn in self.egnn_layers:
+                x, pos = egnn(x, edge_index, edge_attr, pos)
+            
             outs.append(x)
 
-        h = torch.cat(outs, dim=0)          # [total_residues, hidden_dim]
+        h = torch.cat(outs, dim=0)          # [total_residues, in_dim]
         return self.mlp(h).squeeze(-1)
 
     # ===================== EMBEDDING =====================
     def embed(self, feats, edge_attrs, edge_indices, poss):
-        """Trả về embedding per-residue trước MLP (dùng cho phân tích sau)"""
+        """Trả về embedding per-residue trước MLP (dùng để xuất cho XGBoost sau này)"""
         was_train = self.training
         self.eval()
         with torch.no_grad():
@@ -99,8 +114,13 @@ class GraphBepi(pl.LightningModule):
                 esm_proj = self.W_v(V[:, :-self.exfeat_dim])
                 dssp_proj = self.W_u(V[:, -self.exfeat_dim:])
                 x = torch.cat([esm_proj, dssp_proj], dim=-1)
-                x, _ = self.egnn(x, edge_index, edge_attr, pos)
+                
+                # Đi qua các lớp EGNN
+                for egnn in self.egnn_layers:
+                    x, pos = egnn(x, edge_index, edge_attr, pos)
+                
                 outs.append(x)
+        
         if was_train:
             self.train()
         return outs
@@ -110,7 +130,6 @@ class GraphBepi(pl.LightningModule):
         feats, edge_attrs, edge_indices, poss, y = batch
         pred = self(feats, edge_attrs, edge_indices, poss)
         loss = self.loss_fn(pred, y.float())
-        #self.log('train_loss', loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -128,7 +147,6 @@ class GraphBepi(pl.LightningModule):
         self.val_labels.clear()
 
         loss = self.loss_fn(pred, y.float())
-        #self.log('val_loss', loss, prog_bar=True)
 
         if self.metrics is not None:
             result = self.metrics(pred, y)
@@ -136,7 +154,7 @@ class GraphBepi(pl.LightningModule):
             self.log('val_AUPRC', result['AUPRC'])
             self.log('val_mcc',   result['MCC'])
             self.log('val_f1',    result['F1'])
-            print(f"Epoch {self.current_epoch}: val_loss={loss:.4f}, AUPRC={result['AUPRC']:.4f}, AUROC={result['AUROC']:.4f}")
+            print(f"Epoch {self.current_epoch:03d}: val_loss={loss:.4f}, AUPRC={result['AUPRC']:.4f}, AUROC={result['AUROC']:.4f}")
 
     def test_step(self, batch, batch_idx):
         feats, edge_attrs, edge_indices, poss, y = batch
