@@ -43,7 +43,7 @@ class GraphBepi(pl.LightningModule):
         self.test_labels = []
 
         # ================== LOSS & HYPERPARAMS ==================
-        self.loss_fn = PULoss(prior=0.9)  
+        self.loss_fn = PULoss(prior=0.1)  
         self.exfeat_dim = exfeat_dim
         self.augment_eps = augment_eps
         self.lr = lr
