@@ -55,7 +55,10 @@ else:
     val_loader = DataLoader(valset, batch_size=args.batch, shuffle=False, collate_fn=collate_fn)
 
 test_loader=DataLoader(testset,batch_size=args.batch,shuffle=False,collate_fn=collate_fn)
-    
+print("Train size:", len(trainset))
+print("Val size:", len(valset))
+print("Test size:", len(testset))
+print("Train loader batches:", len(train_loader))
 log_name=f'{args.dataset}_{args.tag}'
 metrics=METRICS(device)
 model=GraphBepi(
