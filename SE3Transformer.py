@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn.models import SE3Transformer
+from se3_transformer_pytorch import SE3Transformer
 
 class SE3TransformerWrapper(nn.Module):
     """
