@@ -110,7 +110,6 @@ class GraphBepi(pl.LightningModule):
         feats, edge_attrs, edge_indices, poss, y = batch
         pred = self(feats, edge_attrs, edge_indices, poss)
         loss = self.loss_fn(pred, y.float())
-        self.log('train_loss', loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -128,14 +127,14 @@ class GraphBepi(pl.LightningModule):
         self.val_labels.clear()
 
         loss = self.loss_fn(pred, y.float())
-        self.log('val_loss', loss, prog_bar=True)
+        self.log('val_loss', loss)
 
         if self.metrics is not None:
             result = self.metrics(pred, y)
-            self.log('val_AUROC', result['AUROC'], prog_bar=True)
-            self.log('val_AUPRC', result['AUPRC'], prog_bar=True)
-            self.log('val_mcc',   result['MCC'],   prog_bar=True)
-            self.log('val_f1',    result['F1'],    prog_bar=True)
+            self.log('val_AUROC', result['AUROC'])
+            self.log('val_AUPRC', result['AUPRC'])
+            self.log('val_mcc',   result['MCC'])
+            self.log('val_f1',    result['F1'])
 
     def test_step(self, batch, batch_idx):
         feats, edge_attrs, edge_indices, poss, y = batch
