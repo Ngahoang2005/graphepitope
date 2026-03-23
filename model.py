@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from torch.nn.utils.rnn import pad_sequence
-from SE3Transformer import SE3TransformerWrapper   # ← SE(3)-Transformer
+from EGNN import EGNN   
 
 class PULoss(nn.Module):
     """PU Loss (Positive-Unlabeled) – xử lý imbalance epitope (~9-11%)"""
@@ -51,8 +51,7 @@ class GraphBepi(pl.LightningModule):
         # ================== LAYERS (chỉ giữ graph branch) ==================
         self.W_v = nn.Linear(feat_dim, hidden_dim)          # ESM-2 projection
         self.W_u = nn.Linear(exfeat_dim, hidden_dim)        # DSSP projection
-        self.egnn = SE3TransformerWrapper(2 * hidden_dim, hidden_dim, edge_dim=51, dropout=dropout,
-                                          num_layers=2, num_heads=4)  # SE(3)-Transformer với 2 layers, 4 heads
+        self.egnn = EGNN(2 * hidden_dim, hidden_dim, edge_dim=51, dropout=dropout)
 
         # ================== OUTPUT HEAD ==================
         self.mlp = nn.Sequential(
@@ -82,7 +81,7 @@ class GraphBepi(pl.LightningModule):
             x = torch.cat([esm_proj, dssp_proj], dim=-1)
 
             # Equivariant GNN + position (tọa độ Cα)
-            x, _ = self.egnn(x, edge_index, edge_attr, pos)  # Unpack tuple, ignore updated pos
+            x = self.egnn(x, edge_index, edge_attr, pos)
             outs.append(x)
 
         h = torch.cat(outs, dim=0)          # [total_residues, hidden_dim]
@@ -100,7 +99,7 @@ class GraphBepi(pl.LightningModule):
                 esm_proj = self.W_v(V[:, :-self.exfeat_dim])
                 dssp_proj = self.W_u(V[:, -self.exfeat_dim:])
                 x = torch.cat([esm_proj, dssp_proj], dim=-1)
-                x, _ = self.egnn(x, edge_index, edge_attr, pos)  # Unpack tuple
+                x = self.egnn(x, edge_index, edge_attr, pos)
                 outs.append(x)
         if was_train:
             self.train()
@@ -111,6 +110,7 @@ class GraphBepi(pl.LightningModule):
         feats, edge_attrs, edge_indices, poss, y = batch
         pred = self(feats, edge_attrs, edge_indices, poss)
         loss = self.loss_fn(pred, y.float())
+        self.log('train_loss', loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -128,16 +128,14 @@ class GraphBepi(pl.LightningModule):
         self.val_labels.clear()
 
         loss = self.loss_fn(pred, y.float())
-        self.log('val_loss', loss)
+        self.log('val_loss', loss, prog_bar=True)
 
         if self.metrics is not None:
             result = self.metrics(pred, y)
-            self.log('val_AUROC', result['AUROC'])
-            self.log('val_AUPRC', result['AUPRC'])
-            self.log('val_mcc',   result['MCC'])
-            self.log('val_f1',    result['F1'])
-            # In kết quả ra console để theo dõi
-            print(f"Epoch {self.current_epoch}: val_loss={loss:.4f}, AUPRC={result['AUPRC']:.4f}, AUROC={result['AUROC']:.4f}")
+            self.log('val_AUROC', result['AUROC'], prog_bar=True)
+            self.log('val_AUPRC', result['AUPRC'], prog_bar=True)
+            self.log('val_mcc',   result['MCC'],   prog_bar=True)
+            self.log('val_f1',    result['F1'],    prog_bar=True)
 
     def test_step(self, batch, batch_idx):
         feats, edge_attrs, edge_indices, poss, y = batch
