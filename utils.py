@@ -11,6 +11,11 @@ from tqdm import tqdm,trange
 from preprocess import *
 from graph_construction import calcPROgraph
 import requests as rq
+from esm.sdk.api import ESMProtein, LogitsConfig
+EMBEDDING_CONFIG = LogitsConfig(
+    sequence=True, 
+    return_embeddings=True 
+)
 # prot_amino2id={
 #     '<pad>': 0, '</s>': 1, '<unk>': 2, 'A': 3,
 #     'L': 4, 'G': 5, 'V': 6, 'S': 7,
@@ -54,21 +59,38 @@ class chain:
         self.coord=torch.FloatTensor(self.coord)
         self.label=torch.zeros_like(self.amino)
         self.sequence=''.join(self.sequence)
-    def extract(self,model,device,path):
-        if len(self)>1024 or model is None:
+    def extract(self, model, device, path):
+        # 1. Kiểm tra điều kiện cơ bản
+        if len(self.sequence) > 1024 or model is None:
             return
-        sequence_str = self.sequence 
         
-        with torch.no_grad():
-            # Gọi inference từ ESM-C SDK
-            # Model này sẽ trả về một object chứa hidden_states hoặc embeddings
-            output = model.encode(sequence_str)
-            
-            # Lấy embeddings layer cuối cùng. ESM-C 6B có dim = 2560
-            feat = output.embeddings.cpu().squeeze(0) 
+        target_file = f'{path}/feat/{self.name}_esmc6b.ts'
+        if os.path.exists(target_file):
+            return
 
-        # Đổi tên hậu tố để phân biệt với dữ liệu cũ
-        torch.save(feat, f'{path}/feat/{self.name}_esmc6b.ts')
+        # Đảm bảo thư mục tồn tại
+        os.makedirs(f'{path}/feat/', exist_ok=True)
+
+        try:
+            with torch.no_grad():
+                # Bước 1: Đóng gói chuỗi thành ESMProtein
+                protein = ESMProtein(sequence=self.sequence)
+                
+                # Bước 2: Encode thành Tensor (Chạy ở client)
+                protein_tensor = model.encode(protein)
+                
+                # Bước 3: Gọi API lấy Logits/Embeddings (Chạy ở server Forge)
+                output = model.logits(protein_tensor, EMBEDDING_CONFIG)
+                
+                # Bước 4: Lấy embedding ra. 
+                # Thường output.embeddings là một torch.Tensor
+                feat = output.embeddings.cpu().squeeze(0) 
+                
+                torch.save(feat, target_file)
+                # print(f"Successfully extracted {self.name}")
+
+        except Exception as e:
+            print(f"❌ Lỗi API tại {self.name}: {e}")
         
     def load_dssp(self,path):
         dssp=torch.Tensor(np.load(f'{path}/dssp/{self.name}.npy'))
