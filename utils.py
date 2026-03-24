@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from tqdm import tqdm,trange
 from preprocess import *
 from graph_construction import calcPROgraph
+import requests as rq
 # prot_amino2id={
 #     '<pad>': 0, '</s>': 1, '<unk>': 2, 'A': 3,
 #     'L': 4, 'G': 5, 'V': 6, 'S': 7,
