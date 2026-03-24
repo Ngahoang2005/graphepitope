@@ -12,25 +12,23 @@ class PULoss(nn.Module):
         self.prior = prior
 
     def forward(self, logits, target):
-        pos_mask = (target == 1)
+        y = target.float()
+        pred = torch.sigmoid(logits)
 
-        if pos_mask.any():
-            loss_pos = F.binary_cross_entropy_with_logits(
-                logits[pos_mask],
-                torch.ones_like(logits[pos_mask])
-            )
-        else:
-            loss_pos = torch.tensor(0.0, device=logits.device)
+        pos = (y == 1)
+        unl = (y == 0)
 
-        if (~pos_mask).any():
-            loss_unlab = F.binary_cross_entropy_with_logits(
-                logits[~pos_mask],
-                torch.zeros_like(logits[~pos_mask])
-            )
-        else:
-            loss_unlab = torch.tensor(0.0, device=logits.device)
+        if pos.sum() == 0:
+            return torch.tensor(0.0, device=logits.device)
 
-        return self.prior * loss_pos + (1 - self.prior) * loss_unlab
+        loss_pos = -torch.log(pred[pos] + 1e-8).mean()
+
+        if unl.sum() == 0:
+            return loss_pos
+
+        loss_unl = -torch.log(1 - pred[unl] + 1e-8).mean()
+
+        return self.prior * loss_pos + loss_unl
 class GraphBepi(pl.LightningModule):
     def __init__(
         self, 
@@ -40,7 +38,7 @@ class GraphBepi(pl.LightningModule):
         edge_dim=51, 
         augment_eps=0.05, 
         dropout=0.2, 
-        lr=1e-3,            # <-- ĐÃ TĂNG LR ĐỂ MODEL HỌC ĐƯỢC
+        lr=1e-4,            # <-- ĐÃ TĂNG LR ĐỂ MODEL HỌC ĐƯỢC
         num_egnn_layers=4,  # <-- CẤU HÌNH SỐ LỚP EGNN (Xếp chồng)
         metrics=None, 
         result_path=None
@@ -76,6 +74,7 @@ class GraphBepi(pl.LightningModule):
         # Sử dụng GELU thay vì ReLU giúp gradient mượt hơn với các mạng sâu
         self.mlp = nn.Sequential(
             nn.Linear(in_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, hidden_dim // 2),
@@ -200,4 +199,8 @@ class GraphBepi(pl.LightningModule):
             self.log('test_mcc',   result['MCC'])
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr, betas=(0.9, 0.99), weight_decay=1e-5)
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, betas=(0.9, 0.99), weight_decay=1e-5)
+        return {
+            "optimizer": optimizer,
+            "gradient_clip_val": 1.0
+        }

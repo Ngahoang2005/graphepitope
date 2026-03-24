@@ -10,6 +10,7 @@ class EGNN(nn.Module):
         self.residual = residual
         self.normalize = normalize
         self.epsilon = epsilon
+        self.coord_scale = nn.Parameter(torch.tensor(0.1))
 
         # 🔥 ADD: LayerNorm để ổn định feature
         self.node_norm = nn.LayerNorm(in_dim)
@@ -67,34 +68,28 @@ class EGNN(nn.Module):
 
         # ================= EDGE =================
         e_in = [h[row], h[col], edge_attr, radial]
-        e = self.edge_mlp(torch.cat(e_in, dim=-1))
 
-        # ================= COORD =================
-        coord_update = self.coord_mlp(e)
-
-        # 🔥 FIX 1: dùng tanh thay vì clamp
+        m_ij = self.edge_mlp(torch.cat(e_in, dim=-1))
+        coord_update = self.coord_mlp(m_ij)
+        e = m_ij
         coord_update = torch.tanh(coord_update)
 
-        # 🔥 FIX 2: scale cực kỳ quan trọng
-        trans = coord_diff * coord_update * 0.1
+        trans = coord_diff * coord_update * self.coord_scale
 
         agg_coord = torch.zeros_like(pos)
-        agg_coord.index_add_(0, row, trans)
+        agg_coord.index_add_(0, col, trans)
 
         pos = pos + agg_coord
 
         # ================= NODE =================
         agg_node = torch.zeros_like(h)
-        agg_node.index_add_(0, row, e)
+        agg_node.index_add_(0, col, e)
         
         x_in = torch.cat([h, agg_node], dim=-1)
         h_new = self.node_mlp(x_in)
 
-        # 🔥 FIX 3: giảm residual strength
         if self.residual and h_new.shape[-1] == h.shape[-1]:
             h_new = h + 0.5 * h_new
-
-        # 🔥 FIX 4: normalize feature
         h_new = self.node_norm(h_new)
 
         return h_new, pos
