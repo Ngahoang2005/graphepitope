@@ -1,4 +1,3 @@
-# EGNN.py
 import torch
 import torch.nn as nn
 
@@ -12,7 +11,10 @@ class EGNN(nn.Module):
         self.normalize = normalize
         self.epsilon = epsilon
 
-        # 1. Edge MLP (Sâu hơn, nhiều tham số hơn)
+        # 🔥 ADD: LayerNorm để ổn định feature
+        self.node_norm = nn.LayerNorm(in_dim)
+
+        # 1. Edge MLP
         in_edge = in_dim * 2 + edge_dim + 1
         self.edge_mlp = nn.Sequential(
             nn.Linear(in_edge, hidden_dim * 2),
@@ -21,12 +23,14 @@ class EGNN(nn.Module):
             nn.Linear(hidden_dim * 2, hidden_dim * 2),
             nn.SiLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim * 2, in_dim) # Bắt buộc ra in_dim
+            nn.Linear(hidden_dim * 2, in_dim),
+            nn.Tanh()   # 🔥 ADD: chặn magnitude
         )
 
-        # 2. Coord MLP (Dùng để dịch chuyển toạ độ 3D)
+        # 2. Coord MLP
         layer = nn.Linear(hidden_dim, 1, bias=False)
         nn.init.xavier_uniform_(layer.weight, gain=0.001)
+
         self.coord_mlp = nn.Sequential(
             nn.Linear(in_dim, hidden_dim),
             nn.SiLU(),
@@ -35,7 +39,7 @@ class EGNN(nn.Module):
             layer
         )
 
-        # 3. Node MLP (Sâu hơn, update đặc trưng node)
+        # 3. Node MLP
         self.node_mlp = nn.Sequential(
             nn.Linear(in_dim + in_dim, hidden_dim * 2),
             nn.SiLU(),
@@ -43,7 +47,7 @@ class EGNN(nn.Module):
             nn.Linear(hidden_dim * 2, hidden_dim * 2),
             nn.SiLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim * 2, in_dim) # Bắt buộc ra in_dim để cộng residual
+            nn.Linear(hidden_dim * 2, in_dim)
         )
 
     def coord2radial(self, edge_index, coord):
@@ -61,28 +65,36 @@ class EGNN(nn.Module):
         row, col = edge_index
         radial, coord_diff = self.coord2radial(edge_index, pos)
 
-        # Edge update
+        # ================= EDGE =================
         e_in = [h[row], h[col], edge_attr, radial]
         e = self.edge_mlp(torch.cat(e_in, dim=-1))
 
-        # Coordinate update
+        # ================= COORD =================
         coord_update = self.coord_mlp(e)
-        coord_update = torch.clamp(coord_update, -1.0, 1.0)
-        trans = coord_diff * coord_update
-        
+
+        # 🔥 FIX 1: dùng tanh thay vì clamp
+        coord_update = torch.tanh(coord_update)
+
+        # 🔥 FIX 2: scale cực kỳ quan trọng
+        trans = coord_diff * coord_update * 0.1
+
         agg_coord = torch.zeros_like(pos)
         agg_coord.index_add_(0, row, trans)
+
         pos = pos + agg_coord
 
-        # Node update
+        # ================= NODE =================
         agg_node = torch.zeros_like(h)
         agg_node.index_add_(0, row, e)
         
         x_in = torch.cat([h, agg_node], dim=-1)
         h_new = self.node_mlp(x_in)
-        
-        # Residual connection an toàn
+
+        # 🔥 FIX 3: giảm residual strength
         if self.residual and h_new.shape[-1] == h.shape[-1]:
-            h_new = h + h_new
+            h_new = h + 0.5 * h_new
+
+        # 🔥 FIX 4: normalize feature
+        h_new = self.node_norm(h_new)
 
         return h_new, pos
