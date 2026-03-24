@@ -77,6 +77,9 @@ if __name__ == "__main__":
     import getpass
     from esm.sdk import client
 
+    # 1. Nhập token (Chỉ cần nhập 1 lần khi bắt đầu chạy script)
+    token = '52GkN1RAZoG8IqpGSIuwMT'
+
     # 2. Khởi tạo Cloud Client (Thay vì Local Model)
     # Model "esmc-6b-2024-12" là bản 6B mới nhất trên Cloud
     print("[INFO] Đang kết nối tới Forge API cho ESM-C 6B...")
@@ -87,7 +90,7 @@ if __name__ == "__main__":
     )
     
     print("Model connected successfully!")
-
+    
     print("[INFO] Đang xử lý tập dữ liệu Epitope3D (Đã chia sẵn Train/Test)...")
 
     print(f"--> Xử lý tập Train: {args.train_csv}")
