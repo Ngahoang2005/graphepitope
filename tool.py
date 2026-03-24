@@ -1,4 +1,3 @@
-#tool.py
 import torch
 import torch.nn as nn
 import torchmetrics as tm
@@ -42,13 +41,7 @@ class METRICS:
         auprc = self.auprc(pred,y)
         if threshold is None:
             f1=(2*prec*rec/(prec+rec)).nan_to_num(0)[:-1]
-            # --- KIỂM TRA CHỐNG CRASH ---
-            if thresholds.dim() == 0:
-                threshold = thresholds  # Nếu chỉ có 1 threshold (scalar)
-            elif len(f1) == 0:
-                threshold = torch.tensor(0.5).to(self.device)
-            else:
-                threshold = thresholds[torch.argmax(f1)]
+            threshold = thresholds[torch.argmax(f1)]
         threshold=torch.tensor(threshold)
         self.f1.threshold=threshold
         self.rec.threshold=threshold

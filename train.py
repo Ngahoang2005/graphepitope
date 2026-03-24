@@ -1,4 +1,3 @@
-#train.py
 import os
 import torch
 import random
@@ -10,7 +9,7 @@ import pytorch_lightning as pl
 from tool import METRICS
 from model import GraphBepi
 from dataset import PDB,collate_fn,chain
-from torch.utils.data import DataLoader,Dataset,random_split
+from torch.utils.data import DataLoader,Dataset
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import Callback,EarlyStopping,ModelCheckpoint
 warnings.simplefilter('ignore')
@@ -24,7 +23,7 @@ def seed_everything(seed=2022):
 parser = argparse.ArgumentParser()
 parser.add_argument('--lr', type=float, default=1e-6, help='learning rate.')
 parser.add_argument('--gpu', type=int, default=0, help='gpu.')
-parser.add_argument('--fold', type=int, default=1, help='dataset fold. set it -1 to use the whole trainset')
+parser.add_argument('--fold', type=int, default=-1, help='dataset fold. set it -1 to use the whole trainset')
 parser.add_argument('--seed', type=int, default=2022, help='random seed.')
 parser.add_argument('--batch', type=int, default=4, help='batch size.')
 parser.add_argument('--hidden', type=int, default=256, help='hidden dim.')
@@ -43,22 +42,12 @@ trainset=PDB(mode='train',fold=args.fold,root=root)
 valset=PDB(mode='val',fold=args.fold,root=root)
 testset=PDB(mode='test',fold=args.fold,root=root)
 
-if args.fold == -1:
-    # Split trainset into train and val (80% train, 20% val)
-    train_size = int(0.8 * len(trainset))
-    val_size = len(trainset) - train_size
-    train_subset, val_subset = random_split(trainset, [train_size, val_size])
-    train_loader = DataLoader(train_subset, batch_size=args.batch, shuffle=True, collate_fn=collate_fn, drop_last=True)
-    val_loader = DataLoader(val_subset, batch_size=args.batch, shuffle=False, collate_fn=collate_fn)
-else:
-    train_loader = DataLoader(trainset, batch_size=args.batch, shuffle=True, collate_fn=collate_fn, drop_last=True)
-    val_loader = DataLoader(valset, batch_size=args.batch, shuffle=False, collate_fn=collate_fn)
-
+train_loader=DataLoader(trainset,batch_size=args.batch,shuffle=True,collate_fn=collate_fn,drop_last=True)
+val_loader=DataLoader(valset,batch_size=args.batch,shuffle=False,collate_fn=collate_fn)
 test_loader=DataLoader(testset,batch_size=args.batch,shuffle=False,collate_fn=collate_fn)
-print("Train size:", len(trainset))
-print("Val size:", len(valset))
-print("Test size:", len(testset))
-print("Train loader batches:", len(train_loader))
+if args.fold==-1:
+    val_loader=test_loader
+    
 log_name=f'{args.dataset}_{args.tag}'
 metrics=METRICS(device)
 model=GraphBepi(
@@ -81,7 +70,10 @@ mc=ModelCheckpoint(
     mode='max',
     save_weights_only=True, 
 )
-logger = None
+logger = TensorBoardLogger(
+    args.logger, 
+    name=log_name+f'_{args.fold}'
+)
 cb=[mc,es]
 trainer = pl.Trainer(
     accelerator="cpu" if args.gpu==-1 else "gpu",
@@ -90,8 +82,6 @@ trainer = pl.Trainer(
     callbacks=cb,
     logger=logger,
     check_val_every_n_epoch=1,
-    enable_progress_bar=False,
-    gradient_clip_val=1.0  # Tắt progress bar để chỉ in log epoch
 )
 
 if os.path.exists(f'./model/{log_name}/model_{args.fold}.ckpt'):

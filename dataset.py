@@ -1,6 +1,8 @@
 #dataset.py
 import os
 import esm
+import esm.sdk
+from evolutionary_scale.utils.tokenization import ProteinTokenizer
 import torch
 import warnings
 import argparse
@@ -52,9 +54,8 @@ class PDB(Dataset):
         return {
             'feat':feat,
             'label':seq.label,
-            'edge_index': seq.edge_index,
-            'edge_attr': seq.edge_attr,
-            'pos': seq.pos
+            'adj':seq.adj,
+            'edge':seq.edge,
         }
         
 if __name__ == "__main__":
@@ -71,9 +72,11 @@ if __name__ == "__main__":
     
     os.system(f'cd {root} && mkdir PDB purePDB feat dssp graph')
     # model=None
-    model,_=esm.pretrained.esm2_t36_3B_UR50D()
-    model=model.to(device)
-    model.eval()
+    #model,_=esm.pretrained.esm2_t36_3B_UR50D()
+    esm.sdk.client("esm-c_6b_2405", device=device)
+    print("[INFO] Đang trích xuất đặc trưng bằng ESM-C 6B...")
+    #model=model.to(device)
+    #model.eval()
     print("[INFO] Đang xử lý tập dữ liệu Epitope3D (Đã chia sẵn Train/Test)...")
 
     print(f"--> Xử lý tập Train: {args.train_csv}")
@@ -94,39 +97,3 @@ if __name__ == "__main__":
 
     np.save(f'{root}/cross-validation.npy', idx)
     print(f"[INFO] TỔNG KẾT -> Train: {len(trainset)} chains, Test: {len(testset)} chains, CV idx shape: {idx.shape}")    
-
-#     train='total.csv'
-#     initial(train,root,model,device)
-#     with open(f'{root}/total.pkl','rb') as f:
-#         dataset=pk.load(f)
-#     dates={i.name:i.date for i in dataset}
-# #     with open(f'{root}/date.pkl','rb') as f:
-# #         dates=pk.load(f)
-#     filt_data=[]
-#     for i in dataset:
-#         if len(i)<1024 and i.label.sum()>0:
-#             filt_data.append(i)
-#     month={'JAN':1,'FEB':2,'MAR':3,'APR':4,'MAY':5,'JUN':6,'JUL':7,'AUG':8,'SEP':9,'OCT':10,'NOV':11,'DEC':12}
-#     trainset,valset,testset=[],[],[]
-#     D,M,Y=[],[],[]
-#     test=20210401
-#     dates_=[]
-#     for i in filt_data:
-#         d,m,y=dates[i.name]
-#         d,m,y=int(d),month[m],int(y)
-#         if y<23:
-#             y+=2000
-#         else:
-#             y+=1900
-#         date=y*10000+m*100+d
-#         if date<test:
-#             dates_.append(date)
-#             trainset.append(i)
-#         else:
-#             testset.append(i)
-#     with open(f'{root}/train.pkl','wb') as f:
-#         pk.dump(trainset,f)
-#     with open(f'{root}/test.pkl','wb') as f:
-#         pk.dump(testset,f)
-#     idx=np.array(dates_).argsort()
-#     np.save(f'{root}/cross-validation.npy',idx)

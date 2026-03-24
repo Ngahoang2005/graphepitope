@@ -1,5 +1,5 @@
-#utils.py
 import os
+import esm.sdk
 import torch
 import numpy as np
 import pandas as pd
@@ -9,8 +9,15 @@ import torch.nn.functional as F
 from tqdm import tqdm,trange
 from preprocess import *
 from graph_construction import calcPROgraph
-import requests as rq
-
+# prot_amino2id={
+#     '<pad>': 0, '</s>': 1, '<unk>': 2, 'A': 3,
+#     'L': 4, 'G': 5, 'V': 6, 'S': 7,
+#     'R': 8, 'E': 9, 'D': 10, 'T': 11,
+#     'I': 12, 'P': 13, 'K': 14, 'F': 15,
+#     'Q': 16, 'N': 17, 'Y': 18, 'M': 19,
+#     'H': 20, 'W': 21, 'C': 22, 'X': 23,
+#     'B': 24, 'O': 25, 'U': 26, 'Z': 27
+# }
 amino2id={
     '<null_0>': 0, '<pad>': 1, '<eos>': 2, '<unk>': 3,
     'L': 4, 'A': 5, 'G': 6, 'V': 7, 'S': 8, 'E': 9, 'R': 10, 
@@ -48,10 +55,19 @@ class chain:
     def extract(self,model,device,path):
         if len(self)>1024 or model is None:
             return
-        f=lambda x:model(x.to(device).unsqueeze(0),[36])['representations'][36].squeeze(0).cpu()
+        sequence_str = self.sequence 
+        
         with torch.no_grad():
-            feat=f(self.amino)
-        torch.save(feat,f'{path}/feat/{self.name}_esm2.ts')
+            # Gọi inference từ ESM-C SDK
+            # Model này sẽ trả về một object chứa hidden_states hoặc embeddings
+            output = model.infer_sequence(sequence_str)
+            
+            # Lấy embeddings layer cuối cùng. ESM-C 6B có dim = 2560
+            feat = output.embeddings.cpu().squeeze(0) 
+
+        # Đổi tên hậu tố để phân biệt với dữ liệu cũ
+        torch.save(feat, f'{path}/feat/{self.name}_esmc6b.ts')
+        
     def load_dssp(self,path):
         dssp=torch.Tensor(np.load(f'{path}/dssp/{self.name}.npy'))
         pos=np.load(f'{path}/dssp/{self.name}_pos.npy')
@@ -66,12 +82,14 @@ class chain:
                 self.rsa[i]=1
         self.rsa=self.rsa.bool()
     def load_feat(self,path):
-        self.feat=torch.load(f'{path}/feat/{self.name}_esm2.ts')
+        self.feat = torch.load(f'{path}/feat/{self.name}_esmc6b.ts')
     def load_adj(self,path,self_cycle=False):
         graph=torch.load(f'{path}/graph/{self.name}.graph')
-        self.edge_index = graph['edge_index']
-        self.edge_attr = graph['edge_attr']
-        self.pos = graph['pos']
+        self.adj=graph['adj'].to_dense()
+        self.edge=graph['edge'].to_dense()
+        if not self_cycle:
+            self.adj[range(len(self)),range(len(self))]=0
+            self.edge[range(len(self)),range(len(self))]=0
     def get_adj(self,path,dseq=3,dr=10,dlong=5,k=10):
         graph=calcPROgraph(self.sequence,self.coord,dseq,dr,dlong,k)
         torch.save(graph,f'{path}/graph/{self.name}.graph')
@@ -102,12 +120,10 @@ class chain:
     def __getitem__(self,idx):
         return self.amino[idx],self.coord[idx],self.label[idx]
 def collate_fn(batch):
+    edges = [item['edge'] for item in batch]
     feats = [item['feat'] for item in batch]
-    edge_attrs = [item['edge_attr'] for item in batch]
-    edge_indices = [item['edge_index'] for item in batch]
-    poss = [item['pos'] for item in batch]
-    labels = torch.cat([item['label'] for item in batch], 0)
-    return feats, edge_attrs, edge_indices, poss, labels
+    labels = torch.cat([item['label'] for item in batch],0)
+    return feats,edges,labels
 
 def extract_chain(root,pid,chain,force=False):
     if not force and os.path.exists(f'{root}/purePDB/{pid}_{chain}.pdb'):
@@ -193,6 +209,7 @@ def initial(file,root,model=None,device='cpu',from_native_pdb=True):
             samples.append(data)
     with open(f'{root}/total.pkl','wb') as f:
         pk.dump(samples,f)
+
 def initial_epitope3D(file, root, model=None, device='cpu', from_native_pdb=True):
     df = pd.read_csv(f'{root}/{file}', header=0)
     samples = []
