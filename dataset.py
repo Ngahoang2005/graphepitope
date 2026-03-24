@@ -50,14 +50,31 @@ class PDB(Dataset):
             self.data.append(self.samples[i])
     def __len__(self):
         return len(self.data)
-    def __getitem__(self,idx):
-        seq=self.data[idx]
-        feat=torch.cat([seq.feat,seq.dssp],1)
+    def __getitem__(self, idx):
+        seq = self.data[idx]
+        
+        # --- FIX LỖI SIZE MISMATCH TẠI ĐÂY ---
+        f = seq.feat
+        d = seq.dssp
+        
+        # Cắt BOS/EOS của ESM-C (646 -> 644)
+        if f.shape[0] == d.shape[0] + 2:
+            f = f[1:-1, :]
+            
+        # Đảm bảo độ dài khớp tuyệt đối (đề phòng lỗi file PDB)
+        min_len = min(f.shape[0], d.shape[0])
+        f = f[:min_len, :]
+        d = d[:min_len, :]
+        
+        # Ghép feature
+        feat = torch.cat([f, d], dim=1)
+        # -------------------------------------
+
         return {
-            'feat':feat,
-            'label':seq.label,
-            'adj':seq.adj,
-            'edge':seq.edge,
+            'feat': feat,
+            'label': seq.label[:min_len], 
+            'adj': seq.adj,
+            'edge': seq.edge if hasattr(seq, 'edge') else None,
         }
         
 if __name__ == "__main__":
