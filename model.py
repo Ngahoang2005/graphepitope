@@ -4,22 +4,33 @@ import torch.nn as nn
 import pytorch_lightning as pl
 from EGNN import EGNN   
 
+import torch.nn.functional as F
+
 class PULoss(nn.Module):
-    """PU Loss (Positive-Unlabeled) – xử lý imbalance epitope (~9-11%)"""
-    def __init__(self, prior=0.9):          # <-- ĐÃ SỬA prior=0.9 ĐỂ ƯU TIÊN EPITOPE
+    def __init__(self, prior=0.9):
         super().__init__()
         self.prior = prior
 
-    def forward(self, pred, target):
+    def forward(self, logits, target):
         pos_mask = (target == 1)
+
         if pos_mask.any():
-            loss_pos = -torch.log(pred[pos_mask] + 1e-8).mean()
+            loss_pos = F.binary_cross_entropy_with_logits(
+                logits[pos_mask],
+                torch.ones_like(logits[pos_mask])
+            )
         else:
-            loss_pos = 0.0
-        loss_unlab = -torch.log(1 - pred[~pos_mask] + 1e-8).mean()
+            loss_pos = torch.tensor(0.0, device=logits.device)
+
+        if (~pos_mask).any():
+            loss_unlab = F.binary_cross_entropy_with_logits(
+                logits[~pos_mask],
+                torch.zeros_like(logits[~pos_mask])
+            )
+        else:
+            loss_unlab = torch.tensor(0.0, device=logits.device)
+
         return self.prior * loss_pos + (1 - self.prior) * loss_unlab
-
-
 class GraphBepi(pl.LightningModule):
     def __init__(
         self, 
@@ -43,7 +54,7 @@ class GraphBepi(pl.LightningModule):
         self.test_labels = []
 
         # ================== LOSS & HYPERPARAMS ==================
-        self.loss_fn = PULoss(prior=0.1)  
+        self.loss_fn = PULoss(prior=0.9)  
         self.exfeat_dim = exfeat_dim
         self.augment_eps = augment_eps
         self.lr = lr
@@ -70,7 +81,7 @@ class GraphBepi(pl.LightningModule):
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.GELU(),
             nn.Linear(hidden_dim // 2, 1),
-            nn.Sigmoid()
+            #nn.Sigmoid()
         )
 
         # Khởi tạo trọng số (Initialization)
@@ -130,6 +141,8 @@ class GraphBepi(pl.LightningModule):
         feats, edge_attrs, edge_indices, poss, y = batch
         pred = self(feats, edge_attrs, edge_indices, poss)
         loss = self.loss_fn(pred, y.float())
+        if batch_idx == 0:
+            print("logits mean:", pred.mean().item(), "std:", pred.std().item())
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -149,7 +162,8 @@ class GraphBepi(pl.LightningModule):
         loss = self.loss_fn(pred, y.float())
 
         if self.metrics is not None:
-            result = self.metrics(pred, y)
+            pred_prob = torch.sigmoid(pred)
+            result = self.metrics(pred_prob, y)
             self.log('val_AUROC', result['AUROC'])
             self.log('val_AUPRC', result['AUPRC'])
             self.log('val_mcc',   result['MCC'])
@@ -178,7 +192,8 @@ class GraphBepi(pl.LightningModule):
             torch.save({'pred': pred.cpu(), 'gt': y.cpu()}, f'{self.path}/result.pkl')
 
         if self.metrics is not None:
-            result = self.metrics(pred, y)
+            pred_prob = torch.sigmoid(pred)
+            result = self.metrics(pred_prob, y)
             self.log('test_AUROC', result['AUROC'])
             self.log('test_AUPRC', result['AUPRC'])
             self.log('test_f1',    result['F1'])
