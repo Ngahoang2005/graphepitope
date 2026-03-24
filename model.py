@@ -152,21 +152,7 @@ class GraphBepi(pl.LightningModule):
         loss = self.loss_fn(pred, y.float())
         #self.log('val_step_loss', loss.detach().cpu().item(), on_step=False, on_epoch=False)
         return
-    # def validation_epoch_end(self,outputs):
-    #     pred,y=[],[]
-    #     for i,j in outputs:
-    #         pred.append(i)
-    #         y.append(j)
-    #     pred=torch.cat(pred,0)
-    #     y=torch.cat(y,0)
-    #     loss=self.loss_fn(pred,y.float())
-    #     self.log('val_loss', loss.cpu().item(), on_epoch=True, prog_bar=True, logger=True)
-    #     if self.metrics is not None:
-    #         result=self.metrics(pred.detach().clone(),y.detach().clone())
-    #         self.log('val_AUROC', result['AUROC'], on_epoch=True, prog_bar=True, logger=True)
-    #         self.log('val_AUPRC', result['AUPRC'], on_epoch=True, prog_bar=True, logger=True)
-    #         self.log('val_mcc', result['MCC'], on_epoch=True, prog_bar=True, logger=True)
-    #         self.log('val_f1', result['F1'], on_epoch=True, prog_bar=True, logger=True)
+    
 
     def on_validation_epoch_end(self):
         if len(self.val_preds) == 0:
@@ -198,29 +184,7 @@ class GraphBepi(pl.LightningModule):
         self.test_preds.append(pred.detach())
         self.test_labels.append(y.detach())
         return
-    # def test_epoch_end(self,outputs):
-    #     pred,y=[],[]
-    #     for i,j in outputs:
-    #         pred.append(i)
-    #         y.append(j)
-    #     pred=torch.cat(pred,0)
-    #     y=torch.cat(y,0)
-    #     loss=self.loss_fn(pred,y.float())
-    #     if self.path:
-    #         if not os.path.exists(self.path):
-    #             os.system(f'mkdir -p {self.path}')
-    #         torch.save({'pred':pred.cpu(),'gt':y.cpu()},f'{self.path}/result.pkl')
-    #     if self.metrics is not None:
-    #         result=self.metrics(pred.detach().clone(),y.detach().clone())
-    #         self.log('test_loss', loss.cpu().item(), on_epoch=True, prog_bar=True, logger=True)
-    #         self.log('test_AUROC', result['AUROC'], on_epoch=True, prog_bar=True, logger=True)
-    #         self.log('test_AUPRC', result['AUPRC'], on_epoch=True, prog_bar=True, logger=True)
-    #         self.log('test_recall', result['RECALL'], on_epoch=True, prog_bar=True, logger=True)
-    #         self.log('test_precision', result['PRECISION'], on_epoch=True, prog_bar=True, logger=True)
-    #         self.log('test_f1', result['F1'], on_epoch=True, prog_bar=True, logger=True)
-    #         self.log('test_mcc', result['MCC'], on_epoch=True, prog_bar=True, logger=True)
-    #         self.log('test_bacc', result['BACC'], on_epoch=True, prog_bar=True, logger=True)
-    #         self.log('test_threshold', result['threshold'], on_epoch=True, prog_bar=True, logger=True)
+    
     
     def on_test_epoch_end(self):
         if len(self.test_preds) == 0:
