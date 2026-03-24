@@ -2,7 +2,7 @@
 import os
 import esm
 import esm.sdk
-from evolutionary_scale.utils.tokenization import ProteinTokenizer
+from esm.sdk import client
 import torch
 import warnings
 import argparse
@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from utils import *
 from torch.utils.data import DataLoader,Dataset
 warnings.simplefilter('ignore')
+
+
 class PDB(Dataset):
     def __init__(
         self,mode='train',fold=-1,root='./data/Epitope3D',self_cycle=False
@@ -72,11 +74,23 @@ if __name__ == "__main__":
     
     os.system(f'cd {root} && mkdir PDB purePDB feat dssp graph')
     # model=None
-    #model,_=esm.pretrained.esm2_t36_3B_UR50D()
-    esm.sdk.client("esm-c_6b_2405", device=device)
-    print("[INFO] Đang trích xuất đặc trưng bằng ESM-C 6B...")
-    #model=model.to(device)
-    #model.eval()
+    import getpass
+    from esm.sdk import client
+
+    # 1. Nhập token (Chỉ cần nhập 1 lần khi bắt đầu chạy script)
+    token = getpass.getpass("Nhập Forge Token của bạn: ")
+
+    # 2. Khởi tạo Cloud Client (Thay vì Local Model)
+    # Model "esmc-6b-2024-12" là bản 6B mới nhất trên Cloud
+    print("[INFO] Đang kết nối tới Forge API cho ESM-C 6B...")
+    model = client(
+        model="esmc-6b-2024-12", 
+        url="https://forge.evolutionaryscale.ai", 
+        token=token
+    )
+    
+    print("Model connected successfully!")
+    
     print("[INFO] Đang xử lý tập dữ liệu Epitope3D (Đã chia sẵn Train/Test)...")
 
     print(f"--> Xử lý tập Train: {args.train_csv}")

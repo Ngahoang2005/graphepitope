@@ -1,5 +1,6 @@
 import os
 import esm.sdk
+from esm.sdk import client
 import torch
 import numpy as np
 import pandas as pd
