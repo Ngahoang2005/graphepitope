@@ -62,7 +62,7 @@ class chain:
         with torch.no_grad():
             # Gọi inference từ ESM-C SDK
             # Model này sẽ trả về một object chứa hidden_states hoặc embeddings
-            output = model.infer_sequence(sequence_str)
+            output = model.encode(sequence_str)
             
             # Lấy embeddings layer cuối cùng. ESM-C 6B có dim = 2560
             feat = output.embeddings.cpu().squeeze(0) 
