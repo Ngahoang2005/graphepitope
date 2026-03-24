@@ -50,6 +50,10 @@ class EGNN(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_dim * 2, in_dim)
         )
+        self.att_mlp = nn.Sequential(
+            nn.Linear(in_dim, 1),
+            nn.Sigmoid()
+        )
 
     def coord2radial(self, edge_index, coord):
         row, col = edge_index
@@ -70,6 +74,10 @@ class EGNN(nn.Module):
         e_in = [h[row], h[col], edge_attr, radial]
 
         m_ij = self.edge_mlp(torch.cat(e_in, dim=-1))
+
+        att = self.att_mlp(m_ij)     # [E,1]
+        m_ij = m_ij * att 
+        
         coord_update = self.coord_mlp(m_ij)
         e = m_ij
         coord_update = torch.tanh(coord_update)
