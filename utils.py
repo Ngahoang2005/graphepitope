@@ -141,8 +141,26 @@ class chain:
             self.label[idx]=1
     def __len__(self):
         return self.length
-    def __getitem__(self,idx):
-        return self.amino[idx],self.coord[idx],self.label[idx]
+    def __getitem__(self, idx):
+        f = self.feat
+        d = self.dssp
+        
+        if f.shape[0] == d.shape[0] + 2:
+            f = f[1:-1, :]
+            
+        min_len = min(f.shape[0], d.shape[0])
+        f = f[:min_len, :]
+        d = d[:min_len, :]
+        
+        try:
+            full_feat = torch.cat([f, d], dim=1)
+        except RuntimeError:
+            print(f"Error at {self.name}: Feat {f.shape} != DSSP {d.shape}")
+            raise
+
+        target_label = self.label[:min_len]
+        
+        return full_feat, self.adj, target_label
 def collate_fn(batch):
     edges = [item['edge'] for item in batch]
     feats = [item['feat'] for item in batch]
