@@ -174,15 +174,19 @@ class chain:
         
         try:
             with torch.no_grad():
-                protein = ESMProtein(
-                    sequence=self.sequence,
-                    coordinates=self.coord.numpy()  # ⚠️ quan trọng
-                )
-                protein_tensor = model_if1.encode(protein)
-                output = model_if1.logits(protein_tensor, EMBEDDING_CONFIG)
-                feat = output.embeddings.cpu().squeeze(0)  # (L, 512)
+                coords = torch.tensor(self.coord).unsqueeze(0)  # (1, L, 3)
+
+                # ESM-IF1 expects dict input
+                batch = {
+                    "coords": coords,
+                    "seq": None
+                }
+
+                output = model_if1(batch)
+                feat = output["encoder_out"][0].transpose(0,1).cpu()  # (L, 512)
 
                 torch.save(feat, target_file)
+
         except Exception as e:
             print(f"❌ ESM-IF1 error {self.name}: {e}")
             

@@ -107,11 +107,8 @@ if __name__ == "__main__":
         token=token
     )
     print("[INFO] Loading ESM-IF1...")
-    model_if1 = client(
-        model="esm-if1-2023-12",   # hoặc model đúng trên Forge
-        url="https://forge.evolutionaryscale.ai",
-        token=token
-    )
+    model_if1, alphabet = esm.pretrained.esm_if1_gvp4_t16_142M_UR50()
+    model_if1 = model_if1.eval().to(device)
     
     print("Model connected successfully!")
     
