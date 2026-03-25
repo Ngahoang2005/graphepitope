@@ -1,4 +1,6 @@
 #utils.py
+import asyncio
+from logging import root
 import os
 import esm.sdk
 from esm.sdk import client
@@ -106,8 +108,8 @@ class chain:
     #         if dssp[i][4]>0.15:
     #             self.rsa[i]=1
     #     self.rsa=self.rsa.bool()
-    def load_esm_if1(self, path):
-        self.esm_if1 = torch.load(f'{path}/feat/{self.name}_esmif1.pt')
+    def load_esm3(self, path):
+        self.esm3 = torch.load(f'{path}/feat/{self.name}_esm3.pt')
     def load_feat(self,path):
         self.feat = torch.load(f'{path}/feat/{self.name}_esmc6b.ts')
     def load_adj(self,path,self_cycle=False):
@@ -164,32 +166,36 @@ class chain:
         target_label = self.label[:min_len]
         
         return full_feat, self.adj, target_label
-    def extract_esm_if1(self, model_if1, path):
-        if len(self.sequence) > 1024 or model_if1 is None:
+    async def extract_esm3(self, model, path):
+        if len(self.sequence) > 1024 or model is None:
             return
         
-        target_file = f'{path}/feat/{self.name}_esmif1.pt'
+        target_file = f'{path}/feat/{self.name}_esm3.pt'
         if os.path.exists(target_file):
             return
         
         try:
-            with torch.no_grad():
-                coords = torch.tensor(self.coord).unsqueeze(0)  # (1, L, 3)
+            # dùng coordinates từ PDB
+            coords = torch.tensor(self.coord).unsqueeze(0)  # (1, L, 3)
 
-                # ESM-IF1 expects dict input
-                batch = {
-                    "coords": coords,
-                    "seq": None
-                }
+            protein = ESMProtein(
+                sequence=self.sequence,
+                coordinates=coords
+            )
 
-                output = model_if1(batch)
-                feat = output["encoder_out"][0].transpose(0,1).cpu()  # (L, 512)
+            protein_tensor = model.encode(protein)
 
-                torch.save(feat, target_file)
+            output = await model.async_logits(
+                protein_tensor,
+                LogitsConfig(sequence=False, structure=True, return_embeddings=True)
+            )
+
+            feat = output.embeddings.cpu().squeeze(0)
+
+            torch.save(feat, target_file)
 
         except Exception as e:
-            print(f"❌ ESM-IF1 error {self.name}: {e}")
-            
+            print(f"❌ ESM-3 error {self.name}: {e}")
 def collate_fn(batch):
     edges = [item['edge'] for item in batch]
     feats = [item['feat'] for item in batch]
@@ -231,7 +237,7 @@ def extract_chain(root,pid,chain,force=False):
         for i in lines:
             f.write(i)
     return True
-def process_chain(data,root,pid,model,model_if1,device):
+def process_chain(data,root,pid,model,esm3_model,device):
     # get_dssp(pid,root)
     same={}
     with open(f'{root}/purePDB/{pid}.pdb','r') as f:
@@ -254,7 +260,8 @@ def process_chain(data,root,pid,model,model_if1,device):
     data.process()
     data.get_adj(root)
     data.extract(model,device,root)
-    data.extract_esm_if1(model_if1,root)
+    import asyncio
+    asyncio.run(data.extract_esm3(esm3_model, root))
     return data
 def initial(file,root,model=None,device='cpu',from_native_pdb=True):
     df=pd.read_csv(f'{root}/{file}',header=0,index_col=0)
@@ -282,7 +289,7 @@ def initial(file,root,model=None,device='cpu',from_native_pdb=True):
     with open(f'{root}/total.pkl','wb') as f:
         pk.dump(samples,f)
 
-def initial_epitope3D(file, root, model=None, model_if1=None, device='cpu', from_native_pdb=True):
+def initial_epitope3D(file, root, model=None, esm3_model=None, device='cpu', from_native_pdb=True):
     df = pd.read_csv(f'{root}/{file}', header=0)
     samples = []
     with tqdm(range(len(df))) as tbar:
@@ -328,7 +335,7 @@ def initial_epitope3D(file, root, model=None, model_if1=None, device='cpu', from
                 data.chain_name = chain_id
                 data.name = name
 
-                process_chain(data, root, name, model,model_if1, device)
+                process_chain(data, root, name, model,esm3_model, device)
 
                 # ---- đảm bảo lấy date từ HEADER ----
                 if data.date == '' or data.date is None:

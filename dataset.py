@@ -1,22 +1,14 @@
 #dataset.py
+
 import os
-import sys
+import esm
+import esm.sdk
+from esm.sdk import client
 import torch
 import warnings
 import argparse
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-import pickle as pk
-from tqdm import tqdm
-print("[INFO] Loading ESM-IF1 via Torch Hub...")
-# Chúng ta gán vào biến global để dùng sau
-MODEL_IF1, ALPHABET_IF1 = torch.hub.load("facebookresearch/esm:main", "esm_if1_gvp4_t16_142M_UR50")
-
-# Chỉ import bản mới (ESM-C/ESM-3) ở đây
-import esm 
-from esm.sdk import client as esm_client
-
 from utils import *
 from torch.utils.data import DataLoader,Dataset
 warnings.simplefilter('ignore')
@@ -55,7 +47,7 @@ class PDB(Dataset):
             tbar.set_postfix(chain=f'{self.samples[i].name}')
             self.samples[i].load_feat(self.root)
             #self.samples[i].load_dssp(self.root)
-            self.samples[i].load_esm_if1(self.root)
+            self.samples[i].load_esm3(self.root)
             self.samples[i].load_adj(self.root,self_cycle)
             self.data.append(self.samples[i])
     def __len__(self):
@@ -65,7 +57,7 @@ class PDB(Dataset):
         
         # --- FIX LỖI SIZE MISMATCH TẠI ĐÂY ---
         f = seq.feat
-        e = seq.esm_if1
+        e = seq.esm3
         
         # Cắt BOS/EOS của ESM-C (646 -> 644)
         if f.shape[0] == e.shape[0] + 2:
@@ -110,27 +102,28 @@ if __name__ == "__main__":
     # 2. Khởi tạo Cloud Client (Thay vì Local Model)
     # Model "esmc-6b-2024-12" là bản 6B mới nhất trên Cloud
     print("[INFO] Đang kết nối tới Forge API cho ESM-C 6B...")
-    model = esm_client(
+    model = client(
         model="esmc-6b-2024-12", 
         url="https://forge.evolutionaryscale.ai", 
         token=token
     )
-
-    # 2. Khởi tạo ESM-IF1 (Dùng hàm đã import từ fair-esm)
-    print("[INFO] Loading ESM-IF1...")
-    model_if1 = MODEL_IF1.eval().to(device)
-    alphabet = ALPHABET_IF1
-    model_if1 = model_if1.eval().to(device)
+    print("[INFO] Loading ESM-3...")
+    
+    esm3_model = client(
+        model="esm3-medium-2024-08",
+        url="https://forge.evolutionaryscale.ai",
+        token=token
+    )
     
     print("Model connected successfully!")
     
     print("[INFO] Đang xử lý tập dữ liệu Epitope3D (Đã chia sẵn Train/Test)...")
 
     print(f"--> Xử lý tập Train: {args.train_csv}")
-    trainset = initial_epitope3D(args.train_csv, root, model,model_if1, device)
+    trainset = initial_epitope3D(args.train_csv, root, model, esm3_model, device)
         
     print(f"--> Xử lý tập Test: {args.test_csv}")
-    testset = initial_epitope3D(args.test_csv, root, model, model_if1, device)
+    testset = initial_epitope3D(args.test_csv, root, model, esm3_model, device)
         
     trainset = [i for i in trainset if len(i) < 1024 and getattr(i, 'label', None) is not None and i.label.sum() > 0]
     testset = [i for i in testset if len(i) < 1024 and getattr(i, 'label', None) is not None and i.label.sum() > 0]
