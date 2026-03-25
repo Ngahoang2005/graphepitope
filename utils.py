@@ -169,32 +169,44 @@ class chain:
     async def extract_esm3(self, model, path):
         if len(self.sequence) > 1024 or model is None:
             return
-        
+
         target_file = f'{path}/feat/{self.name}_esm3.pt'
         if os.path.exists(target_file):
             return
-        
+
         try:
-            # dùng coordinates từ PDB
+            # --- ALIGN LENGTH ---
             L_seq = len(self.sequence)
             L_coord = len(self.coord)
-
             min_len = min(L_seq, L_coord)
 
             sequence = self.sequence[:min_len]
-            coords = torch.tensor(self.coord[:min_len])
-            #coords = torch.tensor(self.coord)  # (1, L, 3)
 
+            # ✅ QUAN TRỌNG: convert sang list
+            coords = self.coord[:min_len].cpu().tolist()
+
+            # --- CHECK ---
+            if len(sequence) != len(coords):
+                print(f"❌ Length mismatch {self.name}: seq={len(sequence)} coord={len(coords)}")
+                return
+
+            # --- BUILD PROTEIN ---
             protein = ESMProtein(
-                sequence=self.sequence,
+                sequence=sequence,
                 coordinates=coords
             )
 
+            # --- ENCODE ---
             protein_tensor = model.encode(protein)
 
+            # --- CALL API ---
             output = await model.async_logits(
                 protein_tensor,
-                LogitsConfig(sequence=False, structure=True, return_embeddings=True)
+                LogitsConfig(
+                    sequence=False,
+                    structure=True,
+                    return_embeddings=True
+                )
             )
 
             feat = output.embeddings.cpu().squeeze(0)
@@ -268,7 +280,11 @@ def process_chain(data,root,pid,model,esm3_model,device):
     data.get_adj(root)
     data.extract(model,device,root)
     import asyncio
-    asyncio.run(data.extract_esm3(esm3_model, root))
+    try:
+        asyncio.run(data.extract_esm3(esm3_model, root))
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(data.extract_esm3(esm3_model, root))
     return data
 def initial(file,root,model=None,device='cpu',from_native_pdb=True):
     df=pd.read_csv(f'{root}/{file}',header=0,index_col=0)
