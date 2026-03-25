@@ -244,37 +244,55 @@ def extract_chain(root,pid,chain,force=False):
             f.write(i)
     return True
 def process_chain(data, root, pid, model, esm3_model, device):
+    # pid lúc này truyền vào là "1YBW_A"
+    target_chain = pid.split('_')[-1] 
+    
     temp_coords = {}
     temp_amino = {}
     
-    # Chỉ đọc file và gom nhóm, KHÔNG add trực tiếp ở đây
-    with open(f'{root}/purePDB/{pid}.pdb', 'r') as f:
+    pdb_path = f'{root}/purePDB/{pid}.pdb'
+    if not os.path.exists(pdb_path):
+        print(f"File missing: {pdb_path}")
+        return data
+
+    with open(pdb_path, 'r') as f:
         for line in f:
             if line[:6] == 'HEADER':
                 data.date = line[50:59].strip()
                 continue
             
-            feats = judge(line, None) # Lấy tất cả nguyên tử
+            # judge trả về: (prefix+amino, chain, site, float(x), float(y), float(z))
+            feats = judge(line, None) 
             if feats is None: continue
             
-            amino_raw, atom_name, site, x, y, z = feats
+            amino_raw, chain_id, site, x, y, z = feats
+            
+            # Lọc đúng chain (đề phòng file purePDB chứa nhiều chain)
+            if chain_id != target_chain: continue
+            
+            # Lấy ATOM name từ line (cột 13-16) vì judge không trả về atom_name
+            atom_name = line[12:16].strip()
             
             if atom_name in ['N', 'CA', 'C']:
                 if site not in temp_coords:
                     temp_coords[site] = {}
+                    # Cắt lấy 3 ký tự cuối (vd: AHIS -> HIS)
                     amino = amino_raw[-3:] if len(amino_raw) > 3 else amino_raw
                     temp_amino[site] = amino
                 temp_coords[site][atom_name] = [x, y, z]
 
-    # Sau khi đọc xong hết mới add vào data một lần duy nhất
-    for site in temp_coords:
+    # Sắp xếp site theo số thứ tự để chuỗi protein đúng trình tự
+    sorted_sites = sorted(temp_coords.keys(), key=lambda x: int(''.join(filter(str.isdigit, x))))
+
+    for site in sorted_sites:
         res_atoms = temp_coords[site]
         if 'CA' in res_atoms:
             ca = res_atoms['CA']
+            # Nếu thiếu N hoặc C thì lấy tọa độ CA thay thế (tránh lỗi ESM-3)
             n = res_atoms.get('N', ca)
             c = res_atoms.get('C', ca)
-            # Luôn add bộ 3 tọa độ (3x3)
             data.add(temp_amino[site], site, [n, ca, c])
+
     if data.length < 2:
         print(f"⚠️ Protein {pid} quá ngắn ({data.length} res), bỏ qua.")
         return data
@@ -287,8 +305,11 @@ def process_chain(data, root, pid, model, esm3_model, device):
         try:
             asyncio.run(data.extract_esm3(esm3_model, root))
         except RuntimeError:
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(data.extract_esm3(esm3_model, root))
+            try:
+                loop = asyncio.get_event_loop()
+                loop.run_until_complete(data.extract_esm3(esm3_model, root))
+            except: pass
+            
     return data
 def initial(file,root,model=None,device='cpu',from_native_pdb=True):
     df=pd.read_csv(f'{root}/{file}',header=0,index_col=0)
