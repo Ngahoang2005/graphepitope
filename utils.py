@@ -176,7 +176,14 @@ class chain:
         
         try:
             # dùng coordinates từ PDB
-            coords = torch.tensor(self.coord).unsqueeze(0)  # (1, L, 3)
+            L_seq = len(self.sequence)
+            L_coord = len(self.coord)
+
+            min_len = min(L_seq, L_coord)
+
+            sequence = self.sequence[:min_len]
+            coords = torch.tensor(self.coord[:min_len])
+            #coords = torch.tensor(self.coord)  # (1, L, 3)
 
             protein = ESMProtein(
                 sequence=self.sequence,
