@@ -163,30 +163,20 @@ class chain:
             return
 
         try:
-            # --- ALIGN LENGTH ---
-            
+            # Chỉ lấy số lượng residue khớp giữa sequence và coord
             min_len = min(len(self.sequence), len(self.coord))
+            coords = self.coord[:min_len].clone()
+            # Thay thế NaN bằng 0.0 để tránh lỗi API
+            coords = torch.nan_to_num(coords, nan=0.0)
 
-            sequence = self.sequence[:min_len]
-
-            # ✅ QUAN TRỌNG: convert sang list
-            coords = torch.nan_to_num(self.coord, nan=0.0)
-
-            # --- CHECK ---
-            if len(sequence) != len(coords):
-                print(f"❌ Length mismatch {self.name}: seq={len(sequence)} coord={len(coords)}")
-                return
-
-            # --- BUILD PROTEIN ---
             protein = ESMProtein(
-                sequence=self.sequence,
+                sequence=self.sequence[:min_len],
                 coordinates=coords
             )
 
-            # --- ENCODE ---
             protein_tensor = model.encode(protein)
 
-            # --- CALL API ---
+            # Gọi API
             output = await model.async_logits(
                 protein_tensor,
                 LogitsConfig(
@@ -196,9 +186,13 @@ class chain:
                 )
             )
 
-            feat = output.embeddings.cpu().squeeze(0)
-
-            torch.save(feat, target_file)
+            # --- KIỂM TRA ĐẦU RA AN TOÀN ---
+            if hasattr(output, 'embeddings') and output.embeddings is not None:
+                feat = output.embeddings.cpu().squeeze(0)
+                torch.save(feat, target_file)
+            else:
+                # Nếu output là object lỗi hoặc không có embeddings
+                print(f"⚠️ ESM-3: Không lấy được embedding cho {self.name}. Output type: {type(output)}")
 
         except Exception as e:
             print(f"❌ ESM-3 error {self.name}: {e}")
