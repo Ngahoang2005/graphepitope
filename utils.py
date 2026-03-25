@@ -243,57 +243,49 @@ def extract_chain(root,pid,chain,force=False):
         for i in lines:
             f.write(i)
     return True
-def process_chain(data,root,pid,model,esm3_model,device):
-    # get_dssp(pid,root)
+def process_chain(data, root, pid, model, esm3_model, device):
     temp_coords = {}
     temp_amino = {}
-    same={}
-    with open(f'{root}/purePDB/{pid}.pdb','r') as f:
+    
+    # Chỉ đọc file và gom nhóm, KHÔNG add trực tiếp ở đây
+    with open(f'{root}/purePDB/{pid}.pdb', 'r') as f:
         for line in f:
-            if line[:6]=='HEADER':
-                date=line[50:59].strip()
-                data.date=date
+            if line[:6] == 'HEADER':
+                data.date = line[50:59].strip()
                 continue
-            feats=judge(line, None)
-            if feats is None:
-                continue
-            amino_raw, atom_name,site,x,y,z=feats
+            
+            feats = judge(line, None) # Lấy tất cả nguyên tử
+            if feats is None: continue
+            
+            amino_raw, atom_name, site, x, y, z = feats
+            
             if atom_name in ['N', 'CA', 'C']:
                 if site not in temp_coords:
                     temp_coords[site] = {}
-                    # Xử lý amino name (vd: AHIS -> HIS)
                     amino = amino_raw[-3:] if len(amino_raw) > 3 else amino_raw
                     temp_amino[site] = amino
-                
                 temp_coords[site][atom_name] = [x, y, z]
-            if len(amino)>3:
-                if same.get(site) is None:
-                    same[site]=amino[0]
-                if same[site]!=amino[0]:
-                    continue
-                amino=amino[-3:]
-            data.add(amino,site,[x,y,z])
+
+    # Sau khi đọc xong hết mới add vào data một lần duy nhất
     for site in temp_coords:
         res_atoms = temp_coords[site]
-        if all(atom in res_atoms for atom in ['N', 'CA', 'C']):
-            coords_3x3 = [res_atoms['N'], res_atoms['CA'], res_atoms['C']]
-            data.add(temp_amino[site], site, coords_3x3)
-        else:
-            if 'CA' in res_atoms:
-                ca = res_atoms['CA']
-                # Điền các nguyên tử thiếu bằng tọa độ CA (tốt hơn là bỏ trống gây crash)
-                n = res_atoms.get('N', ca)
-                c = res_atoms.get('C', ca)
-                data.add(temp_amino[site], site, [n, ca, c])
+        if 'CA' in res_atoms:
+            ca = res_atoms['CA']
+            n = res_atoms.get('N', ca)
+            c = res_atoms.get('C', ca)
+            # Luôn add bộ 3 tọa độ (3x3)
+            data.add(temp_amino[site], site, [n, ca, c])
+
     data.process()
     data.get_adj(root)
-    data.extract(model,device,root)
-    import asyncio
-    try:
-        asyncio.run(data.extract_esm3(esm3_model, root))
-    except RuntimeError:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(data.extract_esm3(esm3_model, root))
+    data.extract(model, device, root)
+    
+    if esm3_model is not None:
+        try:
+            asyncio.run(data.extract_esm3(esm3_model, root))
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(data.extract_esm3(esm3_model, root))
     return data
 def initial(file,root,model=None,device='cpu',from_native_pdb=True):
     df=pd.read_csv(f'{root}/{file}',header=0,index_col=0)
