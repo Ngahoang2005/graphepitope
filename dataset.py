@@ -10,7 +10,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from utils import *
 from torch.utils.data import DataLoader,Dataset
-from esm.pretrained import esm_if1_gvp4_t16_142M_UR50
 warnings.simplefilter('ignore')
 
 
@@ -108,7 +107,7 @@ if __name__ == "__main__":
         token=token
     )
     print("[INFO] Loading ESM-IF1...")
-    model_if1, alphabet = esm_if1_gvp4_t16_142M_UR50()
+    model_if1, alphabet = torch.hub.load("facebookresearch/esm:main", "esm_if1_gvp4_t16_142M_UR50")
     model_if1 = model_if1.eval().to(device)
     
     print("Model connected successfully!")
