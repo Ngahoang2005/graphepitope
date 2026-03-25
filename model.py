@@ -34,8 +34,8 @@ class GraphBepi(pl.LightningModule):
             nn.ELU(),
         )
         self.gat=EGAT(2*hidden_dim,hidden_dim,hidden_dim//4,dropout)
-        self.lstm1 = nn.LSTM(hidden_dim,hidden_dim//2,3,batch_first=True,bidirectional=True,dropout=dropout)
-        self.lstm2 = nn.LSTM(hidden_dim,hidden_dim//2,3,batch_first=True,bidirectional=True,dropout=dropout)
+        #self.lstm1 = nn.LSTM(hidden_dim,hidden_dim//2,3,batch_first=True,bidirectional=True,dropout=dropout)
+        #self.lstm2 = nn.LSTM(hidden_dim,hidden_dim//2,3,batch_first=True,bidirectional=True,dropout=dropout)
         # output
         self.mlp=nn.Sequential(
             nn.Linear(4*hidden_dim,hidden_dim,bias=True),
@@ -65,10 +65,10 @@ class GraphBepi(pl.LightningModule):
             x_gcn=torch.cat([x1,x2],-1)
             x_gcn,E=self.gat(x_gcn,E)
             x_gcns.append(x_gcn)
-        feats=pack_padded_sequence(feats,mask.cpu(),True,False)
-        exfeats=pack_padded_sequence(exfeats,mask.cpu(),True,False)
-        feats=pad_packed_sequence(self.lstm1(feats)[0],True)[0]
-        exfeats=pad_packed_sequence(self.lstm2(exfeats)[0],True)[0]
+        # feats=pack_padded_sequence(feats,mask.cpu(),True,False)
+        # exfeats=pack_padded_sequence(exfeats,mask.cpu(),True,False)
+        # feats=pad_packed_sequence(self.lstm1(feats)[0],True)[0]
+        # exfeats=pad_packed_sequence(self.lstm2(exfeats)[0],True)[0]
         x_attns=torch.cat([feats,exfeats],-1)
         
         x_attns=[x_attns[i,:mask[i]] for i in range(len(x_attns))]
@@ -98,11 +98,12 @@ class GraphBepi(pl.LightningModule):
                 x_gcn=torch.cat([x1,x2],-1)
                 x_gcn,_=self.gat(x_gcn,E)
                 x_gcns.append(x_gcn)
-            feats_pack=pack_padded_sequence(feats,mask_lens.cpu(),True,False)
-            exfeats_pack=pack_padded_sequence(exfeats,mask_lens.cpu(),True,False)
-            feats_lstm=pad_packed_sequence(self.lstm1(feats_pack)[0],True)[0]
-            exfeats_lstm=pad_packed_sequence(self.lstm2(exfeats_pack)[0],True)[0]
-            x_attns=torch.cat([feats_lstm,exfeats_lstm],-1)
+            # feats_pack=pack_padded_sequence(feats,mask_lens.cpu(),True,False)
+            # exfeats_pack=pack_padded_sequence(exfeats,mask_lens.cpu(),True,False)
+            # feats_lstm=pad_packed_sequence(self.lstm1(feats_pack)[0],True)[0]
+            # exfeats_lstm=pad_packed_sequence(self.lstm2(exfeats_pack)[0],True)[0]
+            # x_attns=torch.cat([feats_lstm,exfeats_lstm],-1)
+            x_attns = torch.cat([feats, exfeats], -1)
             x_attns=[x_attns[i,:mask_lens[i]] for i in range(len(x_attns))]
             h_list=[torch.cat([x_attn,x_gcn],-1) for x_attn,x_gcn in zip(x_attns,x_gcns)]
         if was_train:
