@@ -227,7 +227,7 @@ def extract_chain(root,pid,chain,force=False):
         for i in lines:
             f.write(i)
     return True
-def process_chain(data,root,pid,model,device):
+def process_chain(data,root,pid,model,model_if1,device):
     # get_dssp(pid,root)
     same={}
     with open(f'{root}/purePDB/{pid}.pdb','r') as f:
@@ -278,7 +278,7 @@ def initial(file,root,model=None,device='cpu',from_native_pdb=True):
     with open(f'{root}/total.pkl','wb') as f:
         pk.dump(samples,f)
 
-def initial_epitope3D(file, root, model=None, device='cpu', from_native_pdb=True):
+def initial_epitope3D(file, root, model=None, model_if1=None, device='cpu', from_native_pdb=True):
     df = pd.read_csv(f'{root}/{file}', header=0)
     samples = []
     with tqdm(range(len(df))) as tbar:
@@ -324,7 +324,7 @@ def initial_epitope3D(file, root, model=None, device='cpu', from_native_pdb=True
                 data.chain_name = chain_id
                 data.name = name
 
-                process_chain(data, root, name, model, device)
+                process_chain(data, root, name, model,model_if1, device)
 
                 # ---- đảm bảo lấy date từ HEADER ----
                 if data.date == '' or data.date is None:

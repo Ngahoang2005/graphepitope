@@ -106,16 +106,22 @@ if __name__ == "__main__":
         url="https://forge.evolutionaryscale.ai", 
         token=token
     )
+    print("[INFO] Loading ESM-IF1...")
+    model_if1 = client(
+        model="esm-if1-2023-12",   # hoặc model đúng trên Forge
+        url="https://forge.evolutionaryscale.ai",
+        token=token
+    )
     
     print("Model connected successfully!")
     
     print("[INFO] Đang xử lý tập dữ liệu Epitope3D (Đã chia sẵn Train/Test)...")
 
     print(f"--> Xử lý tập Train: {args.train_csv}")
-    trainset = initial_epitope3D(args.train_csv, root, model, device)
+    trainset = initial_epitope3D(args.train_csv, root, model,model_if1, device)
         
     print(f"--> Xử lý tập Test: {args.test_csv}")
-    testset = initial_epitope3D(args.test_csv, root, model, device)
+    testset = initial_epitope3D(args.test_csv, root, model, model_if1, device)
         
     trainset = [i for i in trainset if len(i) < 1024 and getattr(i, 'label', None) is not None and i.label.sum() > 0]
     testset = [i for i in testset if len(i) < 1024 and getattr(i, 'label', None) is not None and i.label.sum() > 0]
