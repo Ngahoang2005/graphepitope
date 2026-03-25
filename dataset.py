@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from utils import *
 from torch.utils.data import DataLoader,Dataset
+from esm.pretrained import esm_if1_gvp4_t16_142M_UR50
 warnings.simplefilter('ignore')
 
 
@@ -59,7 +60,7 @@ class PDB(Dataset):
         e = seq.esm_if1
         
         # Cắt BOS/EOS của ESM-C (646 -> 644)
-        if f.shape[0] == d.shape[0] + 2:
+        if f.shape[0] == e.shape[0] + 2:
             f = f[1:-1, :]
             
         # Đảm bảo độ dài khớp tuyệt đối (đề phòng lỗi file PDB)
@@ -107,7 +108,7 @@ if __name__ == "__main__":
         token=token
     )
     print("[INFO] Loading ESM-IF1...")
-    model_if1, alphabet = esm.pretrained.esm_if1_gvp4_t16_142M_UR50()
+    model_if1, alphabet = esm_if1_gvp4_t16_142M_UR50()
     model_if1 = model_if1.eval().to(device)
     
     print("Model connected successfully!")
