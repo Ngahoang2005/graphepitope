@@ -110,7 +110,7 @@ if __name__ == "__main__":
     print("[INFO] Loading ESM-3...")
     
     esm3_model = client(
-        model="esm3-medium-2024-08",
+        model="esm3-sm-open-v1",
         url="https://forge.evolutionaryscale.ai",
         token=token
     )
