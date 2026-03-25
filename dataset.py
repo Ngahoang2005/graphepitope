@@ -9,6 +9,9 @@ import torch.nn.functional as F
 import numpy as np
 import pickle as pk
 from tqdm import tqdm
+print("[INFO] Loading ESM-IF1 via Torch Hub...")
+# Chúng ta gán vào biến global để dùng sau
+MODEL_IF1, ALPHABET_IF1 = torch.hub.load("facebookresearch/esm:main", "esm_if1_gvp4_t16_142M_UR50")
 
 # Chỉ import bản mới (ESM-C/ESM-3) ở đây
 import esm 
@@ -115,7 +118,8 @@ if __name__ == "__main__":
 
     # 2. Khởi tạo ESM-IF1 (Dùng hàm đã import từ fair-esm)
     print("[INFO] Loading ESM-IF1...")
-    model_if1, alphabet = torch.hub.load("facebookresearch/esm:main", "esm_if1_gvp4_t16_142M_UR50")
+    model_if1 = MODEL_IF1.eval().to(device)
+    alphabet = ALPHABET_IF1
     model_if1 = model_if1.eval().to(device)
     
     print("Model connected successfully!")
