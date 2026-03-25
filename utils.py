@@ -176,14 +176,13 @@ class chain:
 
         try:
             # --- ALIGN LENGTH ---
-            L_seq = len(self.sequence)
-            L_coord = len(self.coord)
-            min_len = min(L_seq, L_coord)
+            
+            min_len = min(len(self.sequence), len(self.coord))
 
             sequence = self.sequence[:min_len]
 
             # ✅ QUAN TRỌNG: convert sang list
-            coords = self.coord[:min_len].cpu().tolist()
+            coords = self.coord[:min_len].unsqueeze(1)
 
             # --- CHECK ---
             if len(sequence) != len(coords):
