@@ -57,7 +57,12 @@ class GraphBepi(pl.LightningModule):
             aug[~mask]=0
             V = V+self.augment_eps * aug
         mask=mask.sum(1)
-        feats,exfeats=self.W_v(V[:,:,:-self.exfeat_dim]),self.W_u1(V[:,:,-self.exfeat_dim:])
+        if self.exfeat_dim > 0:
+            feats = self.W_v(V[:,:,:-self.exfeat_dim])
+            exfeats = self.W_u1(V[:,:,-self.exfeat_dim:])
+        else:
+            feats = self.W_v(V)
+            exfeats = torch.zeros_like(feats)
         x_gcns=[]
         for i in range(len(V)):
             E=self.edge_linear(edge[i]).permute(2,0,1)
@@ -120,8 +125,8 @@ class GraphBepi(pl.LightningModule):
             V = pad_sequence(V, batch_first=True, padding_value=0).float()
             mask = V.sum(-1) != 0
             mask_lens = mask.sum(1)
-            feats = self.W_v(V[:,:,:-self.exfeat_dim])
-            exfeats = self.W_u1(V[:,:,-self.exfeat_dim:])
+            feats = self.W_v(V)   # toàn bộ feature
+            exfeats = torch.zeros_like(feats)
             gcn_outs = []
             for i in range(len(V)):
                 E = self.edge_linear(edge[i]).permute(2,0,1)

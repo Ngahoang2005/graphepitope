@@ -63,9 +63,9 @@ log_name=f'{args.dataset}_{args.tag}'
 
 metrics=METRICS(device)
 model=GraphBepi(
-    feat_dim=2560,                     # esm2 representation dim
+    feat_dim=3072,                     # esm2 representation dim
     hidden_dim=args.hidden,            # hidden representation dim
-    exfeat_dim=13,                     # dssp feature dim
+    exfeat_dim=0,                     # dssp feature dim
     edge_dim=51,                       # edge feature dim
     augment_eps=0.05,                  # random noise rate
     dropout=0.2,

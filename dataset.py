@@ -45,7 +45,8 @@ class PDB(Dataset):
         for i in tbar:
             tbar.set_postfix(chain=f'{self.samples[i].name}')
             self.samples[i].load_feat(self.root)
-            self.samples[i].load_dssp(self.root)
+            #self.samples[i].load_dssp(self.root)
+            self.samples[i].load_esm_if1(self.root)
             self.samples[i].load_adj(self.root,self_cycle)
             self.data.append(self.samples[i])
     def __len__(self):
@@ -55,19 +56,19 @@ class PDB(Dataset):
         
         # --- FIX LỖI SIZE MISMATCH TẠI ĐÂY ---
         f = seq.feat
-        d = seq.dssp
+        e = seq.esm_if1
         
         # Cắt BOS/EOS của ESM-C (646 -> 644)
         if f.shape[0] == d.shape[0] + 2:
             f = f[1:-1, :]
             
         # Đảm bảo độ dài khớp tuyệt đối (đề phòng lỗi file PDB)
-        min_len = min(f.shape[0], d.shape[0])
+        min_len = min(f.shape[0], e.shape[0])
         f = f[:min_len, :]
-        d = d[:min_len, :]
+        e = e[:min_len, :]
         
         # Ghép feature
-        feat = torch.cat([f, d], dim=1)
+        feat = torch.cat([f, e], dim=1)
         # -------------------------------------
 
         return {

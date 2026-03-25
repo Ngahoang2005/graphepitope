@@ -93,19 +93,21 @@ class chain:
         except Exception as e:
             print(f"❌ Lỗi API tại {self.name}: {e}")
         
-    def load_dssp(self,path):
-        dssp=torch.Tensor(np.load(f'{path}/dssp/{self.name}.npy'))
-        pos=np.load(f'{path}/dssp/{self.name}_pos.npy')
-        self.dssp=torch.Tensor([
-            -2.4492936e-16, -2.4492936e-16,
-            1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
-        ]).repeat(self.length,1)
-        self.rsa=torch.zeros(self.length)
-        for i in range(len(dssp)):
-            self.dssp[self.site[pos[i]]]=dssp[i]
-            if dssp[i][4]>0.15:
-                self.rsa[i]=1
-        self.rsa=self.rsa.bool()
+    # def load_dssp(self,path):
+    #     dssp=torch.Tensor(np.load(f'{path}/dssp/{self.name}.npy'))
+    #     pos=np.load(f'{path}/dssp/{self.name}_pos.npy')
+    #     self.dssp=torch.Tensor([
+    #         -2.4492936e-16, -2.4492936e-16,
+    #         1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    #     ]).repeat(self.length,1)
+    #     self.rsa=torch.zeros(self.length)
+    #     for i in range(len(dssp)):
+    #         self.dssp[self.site[pos[i]]]=dssp[i]
+    #         if dssp[i][4]>0.15:
+    #             self.rsa[i]=1
+    #     self.rsa=self.rsa.bool()
+    def load_esm_if1(self, path):
+        self.esm_if1 = torch.load(f'{path}/feat/{self.name}_esmif1.pt')
     def load_feat(self,path):
         self.feat = torch.load(f'{path}/feat/{self.name}_esmc6b.ts')
     def load_adj(self,path,self_cycle=False):
@@ -162,6 +164,28 @@ class chain:
         target_label = self.label[:min_len]
         
         return full_feat, self.adj, target_label
+    def extract_esm_if1(self, model_if1, path):
+        if len(self.sequence) > 1024 or model_if1 is None:
+            return
+        
+        target_file = f'{path}/feat/{self.name}_esmif1.pt'
+        if os.path.exists(target_file):
+            return
+        
+        try:
+            with torch.no_grad():
+                protein = ESMProtein(
+                    sequence=self.sequence,
+                    coordinates=self.coord.numpy()  # ⚠️ quan trọng
+                )
+                protein_tensor = model_if1.encode(protein)
+                output = model_if1.logits(protein_tensor, EMBEDDING_CONFIG)
+                feat = output.embeddings.cpu().squeeze(0)  # (L, 512)
+
+                torch.save(feat, target_file)
+        except Exception as e:
+            print(f"❌ ESM-IF1 error {self.name}: {e}")
+            
 def collate_fn(batch):
     edges = [item['edge'] for item in batch]
     feats = [item['feat'] for item in batch]
@@ -204,7 +228,7 @@ def extract_chain(root,pid,chain,force=False):
             f.write(i)
     return True
 def process_chain(data,root,pid,model,device):
-    get_dssp(pid,root)
+    # get_dssp(pid,root)
     same={}
     with open(f'{root}/purePDB/{pid}.pdb','r') as f:
         for line in f:
@@ -226,6 +250,7 @@ def process_chain(data,root,pid,model,device):
     data.process()
     data.get_adj(root)
     data.extract(model,device,root)
+    data.extract_esm_if1(model_if1,root)
     return data
 def initial(file,root,model=None,device='cpu',from_native_pdb=True):
     df=pd.read_csv(f'{root}/{file}',header=0,index_col=0)
