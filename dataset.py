@@ -1,5 +1,18 @@
 #dataset.py
+import sys
 import os
+
+# 1. Load ESM-IF1 (từ fair-esm) trước
+import esm as esm_meta
+from esm.pretrained import esm_if1_gvp4_t16_142M_UR50
+
+# 2. Xóa 'esm' khỏi cache để nạp bản của EvolutionaryScale
+if 'esm' in sys.modules:
+    del sys.modules['esm']
+
+# 3. Load ESM-SDK (từ EvolutionaryScale)
+import esm as esm_new
+
 import esm
 import esm.sdk
 from esm.sdk import client
@@ -101,13 +114,15 @@ if __name__ == "__main__":
     # 2. Khởi tạo Cloud Client (Thay vì Local Model)
     # Model "esmc-6b-2024-12" là bản 6B mới nhất trên Cloud
     print("[INFO] Đang kết nối tới Forge API cho ESM-C 6B...")
-    model = client(
+    model = esm_new.sdk.client(
         model="esmc-6b-2024-12", 
         url="https://forge.evolutionaryscale.ai", 
         token=token
     )
+
+    # 2. Khởi tạo ESM-IF1 (Dùng hàm đã import từ fair-esm)
     print("[INFO] Loading ESM-IF1...")
-    model_if1, alphabet = torch.hub.load("facebookresearch/esm:main", "esm_if1_gvp4_t16_142M_UR50")
+    model_if1, alphabet = esm_if1_gvp4_t16_142M_UR50()
     model_if1 = model_if1.eval().to(device)
     
     print("Model connected successfully!")
