@@ -51,10 +51,10 @@ class chain:
         self.name=''
         self.chain_name=''
         self.protein_name=''
-    def add(self,amino,pos,coord):
+    def add(self,amino,pos,coord_3x3):
         self.sequence.append(DICT[amino])
         self.amino.append(amino2id[DICT[amino]])
-        self.coord.append(coord)
+        self.coord.append(coord_3x3)
         self.site[pos]=self.length
         self.length+=1
     def process(self):
@@ -95,19 +95,7 @@ class chain:
         except Exception as e:
             print(f"❌ Lỗi API tại {self.name}: {e}")
         
-    # def load_dssp(self,path):
-    #     dssp=torch.Tensor(np.load(f'{path}/dssp/{self.name}.npy'))
-    #     pos=np.load(f'{path}/dssp/{self.name}_pos.npy')
-    #     self.dssp=torch.Tensor([
-    #         -2.4492936e-16, -2.4492936e-16,
-    #         1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    #     ]).repeat(self.length,1)
-    #     self.rsa=torch.zeros(self.length)
-    #     for i in range(len(dssp)):
-    #         self.dssp[self.site[pos[i]]]=dssp[i]
-    #         if dssp[i][4]>0.15:
-    #             self.rsa[i]=1
-    #     self.rsa=self.rsa.bool()
+    
     def load_esm3(self, path):
         self.esm3 = torch.load(f'{path}/feat/{self.name}_esm3.pt')
     def load_feat(self,path):
@@ -182,7 +170,7 @@ class chain:
             sequence = self.sequence[:min_len]
 
             # ✅ QUAN TRỌNG: convert sang list
-            coords = self.coord[:min_len].unsqueeze(1)
+            coords = torch.nan_to_num(self.coord, nan=0.0)
 
             # --- CHECK ---
             if len(sequence) != len(coords):
@@ -191,7 +179,7 @@ class chain:
 
             # --- BUILD PROTEIN ---
             protein = ESMProtein(
-                sequence=sequence,
+                sequence=self.sequence,
                 coordinates=coords
             )
 
@@ -257,6 +245,8 @@ def extract_chain(root,pid,chain,force=False):
     return True
 def process_chain(data,root,pid,model,esm3_model,device):
     # get_dssp(pid,root)
+    temp_coords = {}
+    temp_amino = {}
     same={}
     with open(f'{root}/purePDB/{pid}.pdb','r') as f:
         for line in f:
@@ -264,10 +254,18 @@ def process_chain(data,root,pid,model,esm3_model,device):
                 date=line[50:59].strip()
                 data.date=date
                 continue
-            feats=judge(line,'CA')
+            feats=judge(line, None)
             if feats is None:
                 continue
-            amino,_,site,x,y,z=feats
+            amino_raw, atom_name,site,x,y,z=feats
+            if atom_name in ['N', 'CA', 'C']:
+                if site not in temp_coords:
+                    temp_coords[site] = {}
+                    # Xử lý amino name (vd: AHIS -> HIS)
+                    amino = amino_raw[-3:] if len(amino_raw) > 3 else amino_raw
+                    temp_amino[site] = amino
+                
+                temp_coords[site][atom_name] = [x, y, z]
             if len(amino)>3:
                 if same.get(site) is None:
                     same[site]=amino[0]
@@ -275,6 +273,18 @@ def process_chain(data,root,pid,model,esm3_model,device):
                     continue
                 amino=amino[-3:]
             data.add(amino,site,[x,y,z])
+    for site in temp_coords:
+        res_atoms = temp_coords[site]
+        if all(atom in res_atoms for atom in ['N', 'CA', 'C']):
+            coords_3x3 = [res_atoms['N'], res_atoms['CA'], res_atoms['C']]
+            data.add(temp_amino[site], site, coords_3x3)
+        else:
+            if 'CA' in res_atoms:
+                ca = res_atoms['CA']
+                # Điền các nguyên tử thiếu bằng tọa độ CA (tốt hơn là bỏ trống gây crash)
+                n = res_atoms.get('N', ca)
+                c = res_atoms.get('C', ca)
+                data.add(temp_amino[site], site, [n, ca, c])
     data.process()
     data.get_adj(root)
     data.extract(model,device,root)

@@ -10,11 +10,15 @@ ID={
 }
 
 def calcPROgraph(seq,coord,dseq=3,dr=10,dlong=5,k=10):
-    nodes=coord.shape[0]
+    if coord.dim() == 3:
+        ca_coord = coord[:, 1, :] # shape (L, 3)
+    else:
+        ca_coord = coord
+    nodes=ca_coord.shape[0]
     adj=torch.zeros((nodes,nodes))
     E=torch.zeros((nodes,nodes,21*2+2*dseq+3))
     # C=coord.to('cuda:1')
-    dist=torch.cdist(coord,coord,2)
+    dist=torch.cdist(ca_coord,ca_coord,2)
     knn=dist.argsort(1)[:,1:k+1]
     for i in range(nodes):
         # knn=dist[i].argsort()[1:k+1]
