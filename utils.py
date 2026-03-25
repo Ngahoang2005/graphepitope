@@ -275,7 +275,10 @@ def process_chain(data, root, pid, model, esm3_model, device):
             c = res_atoms.get('C', ca)
             # Luôn add bộ 3 tọa độ (3x3)
             data.add(temp_amino[site], site, [n, ca, c])
-
+    if data.length < 2:
+        print(f"⚠️ Protein {pid} quá ngắn ({data.length} res), bỏ qua.")
+        return data
+    
     data.process()
     data.get_adj(root)
     data.extract(model, device, root)
