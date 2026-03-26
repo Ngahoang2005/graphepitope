@@ -112,7 +112,7 @@ def get_foldseek_3di(pdb_path):
         
         if os.path.exists(ss_file):
             
-            cmd_convert = f"foldseek lca {out_db} {out_db} {out_db}_lca --v 0"
+            cmd_convert = f"foldseek lca {out_db} {out_db} {out_db}_lca -v 0"
             subprocess.run(cmd_convert, shell=True, check=True)
             
             # File _ss chứa các chuỗi kết thúc bằng ký tự null, ta đọc và làm sạch
