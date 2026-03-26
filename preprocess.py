@@ -105,7 +105,7 @@ def get_foldseek_3di(pdb_path):
     try:
         # Bước 1: Dùng createdb để chuyển PDB thành database của Foldseek
         # Lệnh này sẽ tạo ra file chứa chuỗi 3Di
-        cmd_create = f"foldseek createdb {pdb_path} {out_db} --v 0"
+        cmd_create = f"foldseek createdb {pdb_path} {out_db} -v 0"
         subprocess.run(cmd_create, shell=True, check=True)
         
         ss_file = out_db + "_ss"
