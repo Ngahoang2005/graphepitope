@@ -1,218 +1,136 @@
-#model.py
 import os
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 import torch.nn.functional as F
-from EGAT import EGAT,AE
-from torch.nn.utils.rnn import pad_sequence,pack_sequence,pack_padded_sequence,pad_packed_sequence
+from HGNN import HierarchicalGNN
+
 class GraphBepi(pl.LightningModule):
     def __init__(
         self, 
-        feat_dim=2560, hidden_dim=256, 
-        exfeat_dim=1280, edge_dim=51, 
-        augment_eps=0.05, dropout=0.2, 
-        lr=1e-6, metrics=None, result_path=None
+        feat_dim=1280, 
+        exfeat_dim=1280, 
+        hidden_dim=256, 
+        augment_eps=0.05, 
+        dropout=0.2, 
+        lr=1e-4, 
+        hcl_weight=0.1,
+        metrics=None, 
+        result_path=None
     ):
         super().__init__()
-        self.metrics=metrics
-        self.path=result_path
+        self.save_hyperparameters()
+        self.metrics = metrics
+        self.path = result_path
+        self.lr = lr
+        self.hcl_weight = hcl_weight
+
         self.val_preds, self.val_labels = [], []
         self.test_preds, self.test_labels = [], []
-        # loss function
-        self.loss_fn=nn.BCELoss()
-        # Hyperparameters
-        self.exfeat_dim=exfeat_dim
-        self.augment_eps = augment_eps
-        self.lr = lr
-        self.cls = 1
-        bias=False
-        self.W_v = nn.Linear(feat_dim, hidden_dim, bias=bias)
-        self.W_u1 = AE(exfeat_dim,hidden_dim,hidden_dim, bias=bias)
-        self.edge_linear=nn.Sequential(
-            nn.Linear(edge_dim,hidden_dim//4, bias=True),
-            nn.ELU(),
-        )
-        self.gat=EGAT(2*hidden_dim,hidden_dim,hidden_dim//4,dropout)
-        #self.lstm1 = nn.LSTM(hidden_dim,hidden_dim//2,3,batch_first=True,bidirectional=True,dropout=dropout)
-        #self.lstm2 = nn.LSTM(hidden_dim,hidden_dim//2,3,batch_first=True,bidirectional=True,dropout=dropout)
-        # output
-        self.mlp=nn.Sequential(
-            nn.Linear(4*hidden_dim,hidden_dim,bias=True),
+        self.loss_fn = nn.BCELoss()
+
+        self.W_v = nn.Linear(feat_dim, hidden_dim)
+        self.W_u1 = nn.Linear(exfeat_dim, hidden_dim)
+
+        self.hgnn = HierarchicalGNN(hidden_dim * 2, hidden_dim)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
-            nn.Linear(hidden_dim,1,bias=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim // 2, 1),
             nn.Sigmoid()
         )
-        # Initialization
+
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, V, edge):
-        h=[]
-        V = pad_sequence(V, batch_first=True, padding_value=0).float()
-        mask=V.sum(-1)!=0
-        if self.training and self.augment_eps > 0:
-            aug=torch.randn_like(V)
-            aug[~mask]=0
-            V = V+self.augment_eps * aug
-        mask=mask.sum(1)
-        feats,exfeats=self.W_v(V[:,:,:-self.exfeat_dim]),self.W_u1(V[:,:,-self.exfeat_dim:])
-        x_gcns=[]
-        for i in range(len(V)):
-            E=self.edge_linear(edge[i]).permute(2,0,1)
-            x1,x2=feats[i,:mask[i]],exfeats[i,:mask[i]]
-            x_gcn=torch.cat([x1,x2],-1)
-            x_gcn,E=self.gat(x_gcn,E)
-            x_gcns.append(x_gcn)
-        # feats=pack_padded_sequence(feats,mask.cpu(),True,False)
-        # exfeats=pack_padded_sequence(exfeats,mask.cpu(),True,False)
-        # feats=pad_packed_sequence(self.lstm1(feats)[0],True)[0]
-        # exfeats=pad_packed_sequence(self.lstm2(exfeats)[0],True)[0]
-        x_attns=torch.cat([feats,exfeats],-1)
+    def compute_hcl_loss(self, layer_outputs, labels):
+        hcl_loss = 0
+        labels = labels.float()
+        for z in layer_outputs:
+            pos_mask = (labels == 1)
+            neg_mask = (labels == 0)
+            if pos_mask.sum() > 0 and neg_mask.sum() > 0:
+                pos_mean = z[pos_mask].mean(0)
+                neg_mean = z[neg_mask].mean(0)
+                hcl_loss += F.mse_loss(pos_mean, neg_mean) * -1.0
+        return hcl_loss
+
+    def forward(self, x, pos, batch_idx=None):
+        esm_feat = x[:, :-self.hparams.exfeat_dim]
+        saprot_feat = x[:, -self.hparams.exfeat_dim:]
+
+        v = F.elu(self.W_v(esm_feat))
+        u = F.elu(self.W_u1(saprot_feat))
         
-        x_attns=[x_attns[i,:mask[i]] for i in range(len(x_attns))]
-        h=[torch.cat([x_attn,x_gcn],-1) for x_attn,x_gcn in zip(x_attns,x_gcns)]
-        h=torch.cat(h,0)
-        return self.mlp(h)
+        combined_x = torch.cat([v, u], dim=-1)
 
-    def embed(self, V, edge):
-        """Return per-residue embeddings from the model (before final MLP).
-        Input:
-            V: list of tensors (L_i x D)
-            edge: list of tensors (L_i x L_i x edge_dim)
-        Output:
-            List of tensors [ (L_i x H) ] where H = concat(LSTM_out_dim + GCN_out_dim)
-        """
-        was_train = self.training
-        self.eval()
-        with torch.no_grad():
-            V = pad_sequence(V, batch_first=True, padding_value=0).float()
-            mask=V.sum(-1)!=0
-            mask_lens=mask.sum(1)
-            feats,exfeats=self.W_v(V[:,:,:-self.exfeat_dim]),self.W_u1(V[:,:,-self.exfeat_dim:])
-            x_gcns=[]
-            for i in range(len(V)):
-                E=self.edge_linear(edge[i]).permute(2,0,1)
-                x1,x2=feats[i,:mask_lens[i]],exfeats[i,:mask_lens[i]]
-                x_gcn=torch.cat([x1,x2],-1)
-                x_gcn,_=self.gat(x_gcn,E)
-                x_gcns.append(x_gcn)
-            # feats_pack=pack_padded_sequence(feats,mask_lens.cpu(),True,False)
-            # exfeats_pack=pack_padded_sequence(exfeats,mask_lens.cpu(),True,False)
-            # feats_lstm=pad_packed_sequence(self.lstm1(feats_pack)[0],True)[0]
-            # exfeats_lstm=pad_packed_sequence(self.lstm2(exfeats_pack)[0],True)[0]
-            # x_attns=torch.cat([feats_lstm,exfeats_lstm],-1)
-            x_attns = torch.cat([feats, exfeats], -1)
-            x_attns=[x_attns[i,:mask_lens[i]] for i in range(len(x_attns))]
-            h_list=[torch.cat([x_attn,x_gcn],-1) for x_attn,x_gcn in zip(x_attns,x_gcns)]
-        if was_train:
-            self.train()
-        return h_list
+        if self.training and self.hparams.augment_eps > 0:
+            combined_x = combined_x + torch.randn_like(combined_x) * self.hparams.augment_eps
 
-    def embed_gnn_only(self, V, edge):
-        """Return per-residue embeddings produced by GNN only (W_v/W_u1 + EGAT), skipping LSTM.
-        Input/Output like embed(): returns a list of tensors [(L_i x H), ...]
-        """
-        was_train = self.training
-        self.eval()
-        with torch.no_grad():
-            V = pad_sequence(V, batch_first=True, padding_value=0).float()
-            mask = V.sum(-1) != 0
-            mask_lens = mask.sum(1)
-            feats = self.W_v(V[:,:,:-self.exfeat_dim])
-            exfeats = self.W_u1(V[:,:,-self.exfeat_dim:])
-            gcn_outs = []
-            for i in range(len(V)):
-                E = self.edge_linear(edge[i]).permute(2,0,1)
-                x1 = feats[i,:mask_lens[i]]
-                x2 = exfeats[i,:mask_lens[i]]
-                x = torch.cat([x1, x2], -1)
-                x_gcn, _ = self.gat(x, E)
-                gcn_outs.append(x_gcn)
-        if was_train:
-            self.train()
-        return gcn_outs
-    def training_step(self, batch, batch_idx): 
-        feat, edge, y = batch
-        pred = self(feat, edge).squeeze(-1)
-        loss=self.loss_fn(pred,y.float())
-        self.log('train_loss', loss.cpu().item(), on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        layer_feats, final_feat = self.hgnn(combined_x, pos, batch_idx)
+        out = self.classifier(final_feat)
+        return out, layer_feats
+
+    def training_step(self, batch, batch_idx):
+        x, pos, y, batch_ptr = batch.x, batch.pos, batch.y, batch.batch
+        pred, layer_feats = self(x, pos, batch_ptr)
+        pred = pred.squeeze(-1)
+
+        loss_bce = self.loss_fn(pred, y.float())
+        loss_hcl = self.compute_hcl_loss(layer_feats, y)
+        total_loss = loss_bce + self.hcl_weight * loss_hcl
+
+        self.log('train_loss', total_loss, on_epoch=True, prog_bar=True)
         if self.metrics is not None:
-            result=self.metrics.calc_prc(pred.detach().clone(),y.detach().clone())
-            self.log('train_auc', result['AUROC'], on_step=False, on_epoch=True, prog_bar=False, logger=True)
-            self.log('train_prc', result['AUPRC'], on_step=False, on_epoch=True, prog_bar=False, logger=True)
-        return loss
+            result = self.metrics.calc_prc(pred.detach(), y.detach())
+            self.log('train_auc', result['AUROC'], on_epoch=True)
+        return total_loss
 
     def validation_step(self, batch, batch_idx):
-        feat, edge, y = batch
-        pred = self(feat, edge).squeeze(-1)
+        x, pos, y, batch_ptr = batch.x, batch.pos, batch.y, batch.batch
+        pred, _ = self(x, pos, batch_ptr)
+        pred = pred.squeeze(-1)
         self.val_preds.append(pred.detach())
         self.val_labels.append(y.detach())
-        # log loss theo step (tùy chọn)
-        loss = self.loss_fn(pred, y.float())
-        #self.log('val_step_loss', loss.detach().cpu().item(), on_step=False, on_epoch=False)
-        return
-    
+        return self.loss_fn(pred, y.float())
 
     def on_validation_epoch_end(self):
-        if len(self.val_preds) == 0:
-            return
+        if not self.val_preds: return
         pred = torch.cat(self.val_preds, 0)
-        y    = torch.cat(self.val_labels, 0)
-        # reset bộ đệm
+        y = torch.cat(self.val_labels, 0)
         self.val_preds.clear(); self.val_labels.clear()
 
         loss = self.loss_fn(pred, y.float())
-        self.log('val_loss', loss.cpu().item(),on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        self.log('val_loss', loss, on_epoch=True, prog_bar=True)
 
         if self.metrics is not None:
-            result = self.metrics(pred.detach().clone(), y.detach().clone())
-            self.log('val_AUROC', result['AUROC'],on_step=False, on_epoch=True, prog_bar=False, logger=True)
-            self.log('val_AUPRC', result['AUPRC'], on_step=False, on_epoch=True, prog_bar=False, logger=True)
-            self.log('val_mcc',   result['MCC'],   on_step=False, on_epoch=True, prog_bar=False, logger=True)
-            self.log('val_f1',    result['F1'],    on_step=False, on_epoch=True, prog_bar=False, logger=True)
-        print(
-            f"Epoch {self.current_epoch} | "
-            f"val_loss {loss:.4f} | "
-            f"AUROC {result['AUROC']:.4f} | "
-            f"AUPRC {result['AUPRC']:.4f}"
-        )
+            result = self.metrics(pred, y)
+            for k, v in result.items():
+                self.log(f'val_{k}', v, on_epoch=True, prog_bar=True)
 
     def test_step(self, batch, batch_idx):
-        feat, edge, y = batch
-        pred = self(feat, edge).squeeze(-1)
-        self.test_preds.append(pred.detach())
+        x, pos, y, batch_ptr = batch.x, batch.pos, batch.y, batch.batch
+        pred, _ = self(x, pos, batch_ptr)
+        self.test_preds.append(pred.detach().squeeze(-1))
         self.test_labels.append(y.detach())
-        return
-    
-    
+
     def on_test_epoch_end(self):
-        if len(self.test_preds) == 0:
-            return
+        if not self.test_preds: return
         pred = torch.cat(self.test_preds, 0)
-        y    = torch.cat(self.test_labels, 0)
-        # reset bộ đệm
+        y = torch.cat(self.test_labels, 0)
         self.test_preds.clear(); self.test_labels.clear()
 
-        loss = self.loss_fn(pred, y.float())
-
         if self.path:
-            if not os.path.exists(self.path):
-                os.system(f'mkdir -p {self.path}')
+            os.makedirs(self.path, exist_ok=True)
             torch.save({'pred': pred.cpu(), 'gt': y.cpu()}, f'{self.path}/result.pkl')
 
         if self.metrics is not None:
-            result = self.metrics(pred.detach().clone(), y.detach().clone())
-            self.log('test_loss',      loss.cpu().item(), on_step=False, on_epoch=True, prog_bar=False, logger=True)
-            self.log('test_AUROC',     result['AUROC'],   on_step=False, on_epoch=True, prog_bar=False, logger=True)
-            self.log('test_AUPRC',     result['AUPRC'],   on_step=False, on_epoch=True, prog_bar=False, logger=True)
-            self.log('test_recall',    result['RECALL'],  on_step=False, on_epoch=True, prog_bar=False, logger=True)
-            self.log('test_precision', result['PRECISION'], on_step=False, on_epoch=True, prog_bar=False, logger=True)
-            self.log('test_f1',        result['F1'],      on_step=False, on_epoch=True, prog_bar=False, logger=True)
-            self.log('test_mcc',       result['MCC'],     on_step=False, on_epoch=True, prog_bar=False, logger=True)
-            self.log('test_bacc',      result['BACC'],    on_step=False,on_epoch=True, prog_bar=False, logger=True)
-            self.log('test_threshold', result['threshold'], on_step=False, on_epoch=True, prog_bar=False, logger=True)
+            result = self.metrics(pred, y)
+            for k, v in result.items():
+                self.log(f'test_{k}', v, on_epoch=True)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), betas=(0.9, 0.99), lr=self.lr, weight_decay=1e-5, eps=1e-5)
+        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-5)
