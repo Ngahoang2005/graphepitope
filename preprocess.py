@@ -93,8 +93,12 @@ def get_foldseek_3di(pdb_path):
     import subprocess
     import os
     import shutil
+    import re
 
-    # Tạo một thư mục tạm để chứa database của Foldseek
+    if not os.path.exists(pdb_path) or os.path.getsize(pdb_path) == 0:
+        return None
+
+    # 1. Tạo thư mục tạm để chứa DB
     tmp_dir = pdb_path + "_tmpbin"
     if os.path.exists(tmp_dir):
         shutil.rmtree(tmp_dir)
@@ -103,33 +107,29 @@ def get_foldseek_3di(pdb_path):
     out_db = os.path.join(tmp_dir, "output")
     
     try:
-        # Bước 1: Dùng createdb để chuyển PDB thành database của Foldseek
-        # Lệnh này sẽ tạo ra file chứa chuỗi 3Di
-        cmd_create = f"foldseek createdb {pdb_path} {out_db} -v 0"
-        subprocess.run(cmd_create, shell=True, check=True)
+        # 2. CHỈ CHẠY createdb - Bước này tự động sinh ra chuỗi 3Di trong file _ss
+        # Bỏ hoàn toàn -v 0 hoặc các lệnh lca phía sau
+        cmd_create = f"foldseek createdb {pdb_path} {out_db}"
+        subprocess.run(cmd_create, shell=True, check=True, capture_output=True)
         
+        # 3. Đọc trực tiếp file output_ss (đây là nơi Foldseek lưu 3Di states)
         ss_file = out_db + "_ss"
-        
         if os.path.exists(ss_file):
-            
-            cmd_convert = f"foldseek lca {out_db} {out_db} {out_db}_lca -v 0"
-            subprocess.run(cmd_convert, shell=True, check=True)
-            
-            # File _ss chứa các chuỗi kết thúc bằng ký tự null, ta đọc và làm sạch
             with open(ss_file, "rb") as f:
                 data = f.read()
-                # Chuỗi 3Di thường nằm ở cuối file hoặc sau các byte header
-                # Cách nhanh nhất: lấy chuỗi ký tự in thường (3di tokens là v, l, a, q...)
-                import re
+                # 3Di tokens là các ký tự viết thường a-z (v, l, a, q, g, v, e...)
+                # Chúng ta dùng regex để tìm chuỗi ký tự thường dài nhất
                 sequences = re.findall(rb'[a-z]+', data)
                 if sequences:
-                    # Lấy chuỗi dài nhất tìm thấy (thường là chuỗi 3di)
-                    return max(sequences, key=len).decode()
+                    # Lấy chuỗi dài nhất tìm thấy trong file binary
+                    res = max(sequences, key=len).decode()
+                    return res
                     
     except Exception as e:
-        print(f"❌ Lỗi thực thi Foldseek tại {pdb_path}: {e}")
+        # Nếu có lỗi phát sinh, hàm sẽ trả về None và in cảnh báo ở utils
+        return None
     finally:
-        # Dọn dẹp thư mục tạm
+        # 4. Luôn dọn dẹp thư mục tạm để tránh đầy bộ nhớ Kaggle
         if os.path.exists(tmp_dir):
             shutil.rmtree(tmp_dir)
             
