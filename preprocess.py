@@ -93,45 +93,37 @@ def get_foldseek_3di(pdb_path):
     import subprocess
     import os
     import shutil
-    import re
 
     if not os.path.exists(pdb_path) or os.path.getsize(pdb_path) == 0:
         return None
 
-    # 1. Tạo thư mục tạm để chứa DB
     tmp_dir = pdb_path + "_tmpbin"
-    if os.path.exists(tmp_dir):
-        shutil.rmtree(tmp_dir)
+    if os.path.exists(tmp_dir): shutil.rmtree(tmp_dir)
     os.makedirs(tmp_dir)
     
     out_db = os.path.join(tmp_dir, "output")
+    out_fasta = os.path.join(tmp_dir, "output.fasta")
     
     try:
-        # 2. CHỈ CHẠY createdb - Bước này tự động sinh ra chuỗi 3Di trong file _ss
-        # Bỏ hoàn toàn -v 0 hoặc các lệnh lca phía sau
-        cmd_create = f"foldseek createdb {pdb_path} {out_db}"
-        subprocess.run(cmd_create, shell=True, check=True, capture_output=True)
+        # Bước 1: Tạo DB từ file PDB
+        subprocess.run(f"foldseek createdb {pdb_path} {out_db} -v 0", shell=True, check=True)
         
-        # 3. Đọc trực tiếp file output_ss (đây là nơi Foldseek lưu 3Di states)
-        ss_file = out_db + "_ss"
-        if os.path.exists(ss_file):
-            with open(ss_file, "rb") as f:
-                data = f.read()
-                # 3Di tokens là các ký tự viết thường a-z (v, l, a, q, g, v, e...)
-                # Chúng ta dùng regex để tìm chuỗi ký tự thường dài nhất
-                sequences = re.findall(rb'[a-z]+', data)
-                if sequences:
-                    # Lấy chuỗi dài nhất tìm thấy trong file binary
-                    res = max(sequences, key=len).decode()
-                    return res
-                    
+        # Bước 2: Dùng convert2fasta để xuất chuỗi 3Di ra file FASTA
+        # Tham số --db-output 1 sẽ lấy chuỗi 3Di thay vì Amino Acid
+        subprocess.run(f"foldseek convert2fasta {out_db} {out_fasta} -v 0", shell=True, check=True)
+        
+        # Bước 3: Đọc file FASTA để lấy chuỗi
+        if os.path.exists(out_fasta):
+            with open(out_fasta, "r") as f:
+                lines = f.readlines()
+                # File FASTA: dòng 1 là >Header, dòng 2 là Sequence
+                if len(lines) >= 2:
+                    return lines[1].strip()
     except Exception as e:
-        # Nếu có lỗi phát sinh, hàm sẽ trả về None và in cảnh báo ở utils
+        # print(f"Foldseek error: {e}")
         return None
     finally:
-        # 4. Luôn dọn dẹp thư mục tạm để tránh đầy bộ nhớ Kaggle
-        if os.path.exists(tmp_dir):
-            shutil.rmtree(tmp_dir)
+        if os.path.exists(tmp_dir): shutil.rmtree(tmp_dir)
             
     return None
 def extract_saprot_feat(pdb_id, amino_seq, root, device='cuda'):
@@ -141,7 +133,10 @@ def extract_saprot_feat(pdb_id, amino_seq, root, device='cuda'):
     
     # Format SaProt: kết hợp axit amin (chữ thường) và 3Di (chữ hoa)
     # Ví dụ: "aV lA sS..."
-    combined_seq = " ".join([f"{a.lower()}{s.upper()}" for a, s in zip(amino_seq, seq_3di)])
+    min_len = min(len(amino_seq), len(seq_3di))
+    a_seq = amino_seq[:min_len]
+    s_seq = seq_3di[:min_len]
+    combined_seq = " ".join([f"{a.lower()}{s.upper()}" for a, s in zip(a_seq, s_seq)])
     
     saprot_model.to(device)
     inputs = saprot_tokenizer(combined_seq, return_tensors="pt").to(device)
