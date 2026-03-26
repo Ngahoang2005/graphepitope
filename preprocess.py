@@ -92,20 +92,48 @@ def judge(line,filt_atom='CA'):
 def get_foldseek_3di(pdb_path):
     import subprocess
     import os
-    # Tạo file tạm duy nhất cho mỗi process
-    tmp_save = pdb_path + ".tsv"
-    cmd = f"foldseek structureto3di --format-mode 0 {pdb_path} {tmp_save}"
+    import shutil
+
+    # Tạo một thư mục tạm để chứa database của Foldseek
+    tmp_dir = pdb_path + "_tmpbin"
+    if os.path.exists(tmp_dir):
+        shutil.rmtree(tmp_dir)
+    os.makedirs(tmp_dir)
+    
+    out_db = os.path.join(tmp_dir, "output")
+    
     try:
-        subprocess.run(cmd, shell=True, check=True, capture_output=True)
-        with open(tmp_save, "r") as f:
-            line = f.readline()
-            if line:
-                return line.split('\t')[2].strip()
+        # Bước 1: Dùng createdb để chuyển PDB thành database của Foldseek
+        # Lệnh này sẽ tạo ra file chứa chuỗi 3Di
+        cmd_create = f"foldseek createdb {pdb_path} {out_db} --v 0"
+        subprocess.run(cmd_create, shell=True, check=True)
+        
+        ss_file = out_db + "_ss"
+        
+        if os.path.exists(ss_file):
+            
+            cmd_convert = f"foldseek lca {out_db} {out_db} {out_db}_lca --v 0"
+            subprocess.run(cmd_convert, shell=True, check=True)
+            
+            # File _ss chứa các chuỗi kết thúc bằng ký tự null, ta đọc và làm sạch
+            with open(ss_file, "rb") as f:
+                data = f.read()
+                # Chuỗi 3Di thường nằm ở cuối file hoặc sau các byte header
+                # Cách nhanh nhất: lấy chuỗi ký tự in thường (3di tokens là v, l, a, q...)
+                import re
+                sequences = re.findall(rb'[a-z]+', data)
+                if sequences:
+                    # Lấy chuỗi dài nhất tìm thấy (thường là chuỗi 3di)
+                    return max(sequences, key=len).decode()
+                    
     except Exception as e:
-        print(f"Foldseek Error: {e}")
-        return None
+        print(f"❌ Lỗi thực thi Foldseek tại {pdb_path}: {e}")
     finally:
-        if os.path.exists(tmp_save): os.remove(tmp_save)
+        # Dọn dẹp thư mục tạm
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
+            
+    return None
 def extract_saprot_feat(pdb_id, amino_seq, root, device='cuda'):
     pdb_path = f"{root}/purePDB/{pdb_id}.pdb"
     seq_3di = get_foldseek_3di(pdb_path)
