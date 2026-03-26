@@ -45,7 +45,7 @@ class PDB(Dataset):
         for i in tbar:
             tbar.set_postfix(chain=f'{self.samples[i].name}')
             self.samples[i].load_feat(self.root)
-            self.samples[i].load_dssp(self.root)
+            self.samples[i].load_saprot(self.root)
             self.samples[i].load_adj(self.root,self_cycle)
             self.data.append(self.samples[i])
     def __len__(self):
@@ -55,7 +55,7 @@ class PDB(Dataset):
         
         # --- FIX LỖI SIZE MISMATCH TẠI ĐÂY ---
         f = seq.feat
-        d = seq.dssp
+        d = seq.saprot
         
         # Cắt BOS/EOS của ESM-C (646 -> 644)
         if f.shape[0] == d.shape[0] + 2:
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     root = args.root
     device='cpu' if args.gpu==-1 else f'cuda:{args.gpu}'
     
-    os.system(f'cd {root} && mkdir PDB purePDB feat dssp graph')
+    os.system(f'cd {root} && mkdir PDB purePDB feat saprot graph')
     # model=None
     import getpass
     from esm.sdk import client

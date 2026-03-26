@@ -45,7 +45,7 @@ class chain:
         self.adj=None
         self.edge=None
         self.feat=None
-        self.dssp=None
+        self.saprot=None
         self.name=''
         self.chain_name=''
         self.protein_name=''
@@ -92,7 +92,7 @@ class chain:
 
         except Exception as e:
             print(f"❌ Lỗi API tại {self.name}: {e}")
-            
+
         saprot_file = f'{path}/saprot/{self.name}.pt'
         if not os.path.exists(saprot_file):
             os.makedirs(f'{path}/saprot/', exist_ok=True)
@@ -139,7 +139,7 @@ class chain:
         return self.length
     def __getitem__(self, idx):
         f = self.feat
-        d = self.dssp
+        d = self.saprot
         
         if f.shape[0] == d.shape[0] + 2:
             f = f[1:-1, :]
@@ -151,7 +151,7 @@ class chain:
         try:
             full_feat = torch.cat([f, d], dim=1)
         except RuntimeError:
-            print(f"Error at {self.name}: Feat {f.shape} != DSSP {d.shape}")
+            print(f"Error at {self.name}: Feat {f.shape} != SAPROT {d.shape}")
             raise
 
         target_label = self.label[:min_len]
@@ -199,7 +199,7 @@ def extract_chain(root,pid,chain,force=False):
             f.write(i)
     return True
 def process_chain(data,root,pid,model,device):
-    get_dssp(pid,root)
+    
     same={}
     with open(f'{root}/purePDB/{pid}.pdb','r') as f:
         for line in f:
@@ -219,6 +219,7 @@ def process_chain(data,root,pid,model,device):
                 amino=amino[-3:]
             data.add(amino,site,[x,y,z])
     data.process()
+    get_saprot(data.name, data.sequence, root, device)
     data.get_adj(root)
     data.extract(model,device,root)
     return data
