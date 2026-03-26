@@ -93,11 +93,6 @@ class chain:
         except Exception as e:
             print(f"❌ Lỗi API tại {self.name}: {e}")
 
-        saprot_file = f'{path}/saprot/{self.name}.pt'
-        if not os.path.exists(saprot_file):
-            os.makedirs(f'{path}/saprot/', exist_ok=True)
-            feat_s = extract_saprot_feat(self.name, self.sequence, path, device)
-            torch.save(feat_s, saprot_file)
     def load_saprot(self, path):
         # Load embedding SaProt đã được lưu sẵn (file .pt hoặc .npy)
         self.saprot = torch.load(f'{path}/saprot/{self.name}.pt')
@@ -201,6 +196,11 @@ def extract_chain(root,pid,chain,force=False):
 def process_chain(data,root,pid,model,device):
     
     same={}
+    pdb_path = f'{root}/purePDB/{pid}.pdb' 
+    
+    if not os.path.exists(pdb_path):
+        print(f"❌ Không tìm thấy file: {pdb_path}")
+        return data
     with open(f'{root}/purePDB/{pid}.pdb','r') as f:
         for line in f:
             if line[:6]=='HEADER':

@@ -90,15 +90,22 @@ def judge(line,filt_atom='CA'):
 #     np.save(f"{root}/dssp/"+ID+"_pos",position)
 
 def get_foldseek_3di(pdb_path):
-    """Sử dụng Foldseek để lấy chuỗi 3Di từ file PDB"""
     import subprocess
-    # Lệnh foldseek để trích xuất cấu trúc thành chuỗi ký tự 3Di
-    cmd = f"foldseek structureto3di --format-mode 0 {pdb_path} tmp.tsv && cut -f3 tmp.tsv && rm tmp.tsv"
+    import os
+    # Tạo file tạm duy nhất cho mỗi process
+    tmp_save = pdb_path + ".tsv"
+    cmd = f"foldseek structureto3di --format-mode 0 {pdb_path} {tmp_save}"
     try:
-        result = subprocess.check_output(cmd, shell=True).decode().strip()
-        return result.split('\n')[-1] # Lấy chuỗi 3Di
-    except:
+        subprocess.run(cmd, shell=True, check=True, capture_output=True)
+        with open(tmp_save, "r") as f:
+            line = f.readline()
+            if line:
+                return line.split('\t')[2].strip()
+    except Exception as e:
+        print(f"Foldseek Error: {e}")
         return None
+    finally:
+        if os.path.exists(tmp_save): os.remove(tmp_save)
 def extract_saprot_feat(pdb_id, amino_seq, root, device='cuda'):
     pdb_path = f"{root}/purePDB/{pdb_id}.pdb"
     seq_3di = get_foldseek_3di(pdb_path)
