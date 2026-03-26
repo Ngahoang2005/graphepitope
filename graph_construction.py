@@ -10,22 +10,11 @@ ID={
 }
 
 def calcPROgraph(seq,coord,dseq=3,dr=10,dlong=5,k=10):
-    if coord.dim() == 3:
-        ca_coord = coord[:, 1, :] # shape (L, 3)
-    else:
-        ca_coord = coord
-    if ca_coord.dim() < 2 or ca_coord.shape[0] < 2:
-        # Trả về đồ thị rỗng an toàn thay vì crash
-        nodes = ca_coord.shape[0] if ca_coord.dim() >= 1 else 0
-        return {
-            'adj': torch.zeros((nodes, nodes)).to_sparse(),
-            'edge': torch.zeros((nodes, nodes, 21*2+2*dseq+3)).to_sparse()
-        }
-    nodes=ca_coord.shape[0]
+    nodes=coord.shape[0]
     adj=torch.zeros((nodes,nodes))
     E=torch.zeros((nodes,nodes,21*2+2*dseq+3))
     # C=coord.to('cuda:1')
-    dist=torch.cdist(ca_coord,ca_coord,2)
+    dist=torch.cdist(coord,coord,2)
     knn=dist.argsort(1)[:,1:k+1]
     for i in range(nodes):
         # knn=dist[i].argsort()[1:k+1]

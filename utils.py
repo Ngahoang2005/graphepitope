@@ -1,6 +1,4 @@
 #utils.py
-import asyncio
-from logging import root
 import os
 import esm.sdk
 from esm.sdk import client
@@ -51,10 +49,10 @@ class chain:
         self.name=''
         self.chain_name=''
         self.protein_name=''
-    def add(self,amino,pos,coord_3x3):
+    def add(self,amino,pos,coord):
         self.sequence.append(DICT[amino])
         self.amino.append(amino2id[DICT[amino]])
-        self.coord.append(coord_3x3)
+        self.coord.append(coord)
         self.site[pos]=self.length
         self.length+=1
     def process(self):
@@ -94,10 +92,15 @@ class chain:
 
         except Exception as e:
             print(f"❌ Lỗi API tại {self.name}: {e}")
-        
-    
-    def load_esm3(self, path):
-        self.esm3 = torch.load(f'{path}/feat/{self.name}_esm3.pt')
+            
+        saprot_file = f'{path}/saprot/{self.name}.pt'
+        if not os.path.exists(saprot_file):
+            os.makedirs(f'{path}/saprot/', exist_ok=True)
+            feat_s = extract_saprot_feat(self.name, self.sequence, path, device)
+            torch.save(feat_s, saprot_file)
+    def load_saprot(self, path):
+        # Load embedding SaProt đã được lưu sẵn (file .pt hoặc .npy)
+        self.saprot = torch.load(f'{path}/saprot/{self.name}.pt')
     def load_feat(self,path):
         self.feat = torch.load(f'{path}/feat/{self.name}_esmc6b.ts')
     def load_adj(self,path,self_cycle=False):
@@ -154,48 +157,6 @@ class chain:
         target_label = self.label[:min_len]
         
         return full_feat, self.adj, target_label
-    async def extract_esm3(self, model, path):
-        if len(self.sequence) > 1024 or model is None:
-            return
-
-        target_file = f'{path}/feat/{self.name}_esm3.pt'
-        if os.path.exists(target_file):
-            return
-
-        try:
-            # Chỉ lấy số lượng residue khớp giữa sequence và coord
-            min_len = min(len(self.sequence), len(self.coord))
-            coords = self.coord[:min_len].clone()
-            # Thay thế NaN bằng 0.0 để tránh lỗi API
-            coords = torch.nan_to_num(coords, nan=0.0)
-
-            protein = ESMProtein(
-                sequence=self.sequence[:min_len],
-                coordinates=coords
-            )
-
-            protein_tensor = model.encode(protein)
-
-            # Gọi API
-            output = await model.async_logits(
-                protein_tensor,
-                LogitsConfig(
-                    sequence=False,
-                    structure=True,
-                    return_embeddings=True
-                )
-            )
-
-            # --- KIỂM TRA ĐẦU RA AN TOÀN ---
-            if hasattr(output, 'embeddings') and output.embeddings is not None:
-                feat = output.embeddings.cpu().squeeze(0)
-                torch.save(feat, target_file)
-            else:
-                # Nếu output là object lỗi hoặc không có embeddings
-                print(f"⚠️ ESM-3: Không lấy được embedding cho {self.name}. Output type: {type(output)}")
-
-        except Exception as e:
-            print(f"❌ ESM-3 error {self.name}: {e}")
 def collate_fn(batch):
     edges = [item['edge'] for item in batch]
     feats = [item['feat'] for item in batch]
@@ -237,73 +198,29 @@ def extract_chain(root,pid,chain,force=False):
         for i in lines:
             f.write(i)
     return True
-def process_chain(data, root, pid, model, esm3_model, device):
-    # pid lúc này truyền vào là "1YBW_A"
-    target_chain = pid.split('_')[-1] 
-    
-    temp_coords = {}
-    temp_amino = {}
-    
-    pdb_path = f'{root}/purePDB/{pid}.pdb'
-    if not os.path.exists(pdb_path):
-        print(f"File missing: {pdb_path}")
-        return data
-
-    with open(pdb_path, 'r') as f:
+def process_chain(data,root,pid,model,device):
+    get_dssp(pid,root)
+    same={}
+    with open(f'{root}/purePDB/{pid}.pdb','r') as f:
         for line in f:
-            if line[:6] == 'HEADER':
-                data.date = line[50:59].strip()
+            if line[:6]=='HEADER':
+                date=line[50:59].strip()
+                data.date=date
                 continue
-            
-            # judge trả về: (prefix+amino, chain, site, float(x), float(y), float(z))
-            feats = judge(line, None) 
-            if feats is None: continue
-            
-            amino_raw, chain_id, site, x, y, z = feats
-            
-            # Lọc đúng chain (đề phòng file purePDB chứa nhiều chain)
-            if chain_id != target_chain: continue
-            
-            # Lấy ATOM name từ line (cột 13-16) vì judge không trả về atom_name
-            atom_name = line[12:16].strip()
-            
-            if atom_name in ['N', 'CA', 'C']:
-                if site not in temp_coords:
-                    temp_coords[site] = {}
-                    # Cắt lấy 3 ký tự cuối (vd: AHIS -> HIS)
-                    amino = amino_raw[-3:] if len(amino_raw) > 3 else amino_raw
-                    temp_amino[site] = amino
-                temp_coords[site][atom_name] = [x, y, z]
-
-    # Sắp xếp site theo số thứ tự để chuỗi protein đúng trình tự
-    sorted_sites = sorted(temp_coords.keys(), key=lambda x: int(''.join(filter(str.isdigit, x))))
-
-    for site in sorted_sites:
-        res_atoms = temp_coords[site]
-        if 'CA' in res_atoms:
-            ca = res_atoms['CA']
-            # Nếu thiếu N hoặc C thì lấy tọa độ CA thay thế (tránh lỗi ESM-3)
-            n = res_atoms.get('N', ca)
-            c = res_atoms.get('C', ca)
-            data.add(temp_amino[site], site, [n, ca, c])
-
-    if data.length < 2:
-        print(f"⚠️ Protein {pid} quá ngắn ({data.length} res), bỏ qua.")
-        return data
-    
+            feats=judge(line,'CA')
+            if feats is None:
+                continue
+            amino,_,site,x,y,z=feats
+            if len(amino)>3:
+                if same.get(site) is None:
+                    same[site]=amino[0]
+                if same[site]!=amino[0]:
+                    continue
+                amino=amino[-3:]
+            data.add(amino,site,[x,y,z])
     data.process()
     data.get_adj(root)
-    data.extract(model, device, root)
-    
-    if esm3_model is not None:
-        try:
-            asyncio.run(data.extract_esm3(esm3_model, root))
-        except RuntimeError:
-            try:
-                loop = asyncio.get_event_loop()
-                loop.run_until_complete(data.extract_esm3(esm3_model, root))
-            except: pass
-            
+    data.extract(model,device,root)
     return data
 def initial(file,root,model=None,device='cpu',from_native_pdb=True):
     df=pd.read_csv(f'{root}/{file}',header=0,index_col=0)
@@ -331,7 +248,7 @@ def initial(file,root,model=None,device='cpu',from_native_pdb=True):
     with open(f'{root}/total.pkl','wb') as f:
         pk.dump(samples,f)
 
-def initial_epitope3D(file, root, model=None, esm3_model=None, device='cpu', from_native_pdb=True):
+def initial_epitope3D(file, root, model=None, device='cpu', from_native_pdb=True):
     df = pd.read_csv(f'{root}/{file}', header=0)
     samples = []
     with tqdm(range(len(df))) as tbar:
@@ -377,7 +294,7 @@ def initial_epitope3D(file, root, model=None, esm3_model=None, device='cpu', fro
                 data.chain_name = chain_id
                 data.name = name
 
-                process_chain(data, root, name, model,esm3_model, device)
+                process_chain(data, root, name, model, device)
 
                 # ---- đảm bảo lấy date từ HEADER ----
                 if data.date == '' or data.date is None:

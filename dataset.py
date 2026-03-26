@@ -1,5 +1,4 @@
 #dataset.py
-
 import os
 import esm
 import esm.sdk
@@ -46,8 +45,7 @@ class PDB(Dataset):
         for i in tbar:
             tbar.set_postfix(chain=f'{self.samples[i].name}')
             self.samples[i].load_feat(self.root)
-            #self.samples[i].load_dssp(self.root)
-            self.samples[i].load_esm3(self.root)
+            self.samples[i].load_dssp(self.root)
             self.samples[i].load_adj(self.root,self_cycle)
             self.data.append(self.samples[i])
     def __len__(self):
@@ -57,19 +55,19 @@ class PDB(Dataset):
         
         # --- FIX LỖI SIZE MISMATCH TẠI ĐÂY ---
         f = seq.feat
-        e = seq.esm3
+        d = seq.dssp
         
         # Cắt BOS/EOS của ESM-C (646 -> 644)
-        if f.shape[0] == e.shape[0] + 2:
+        if f.shape[0] == d.shape[0] + 2:
             f = f[1:-1, :]
             
         # Đảm bảo độ dài khớp tuyệt đối (đề phòng lỗi file PDB)
-        min_len = min(f.shape[0], e.shape[0])
+        min_len = min(f.shape[0], d.shape[0])
         f = f[:min_len, :]
-        e = e[:min_len, :]
+        d = d[:min_len, :]
         
         # Ghép feature
-        feat = torch.cat([f, e], dim=1)
+        feat = torch.cat([f, d], dim=1)
         # -------------------------------------
 
         return {
@@ -107,23 +105,16 @@ if __name__ == "__main__":
         url="https://forge.evolutionaryscale.ai", 
         token=token
     )
-    print("[INFO] Loading ESM-3...")
-    
-    esm3_model = client(
-        model="esm3-sm-open-v1",
-        url="https://forge.evolutionaryscale.ai",
-        token=token
-    )
     
     print("Model connected successfully!")
     
     print("[INFO] Đang xử lý tập dữ liệu Epitope3D (Đã chia sẵn Train/Test)...")
 
     print(f"--> Xử lý tập Train: {args.train_csv}")
-    trainset = initial_epitope3D(args.train_csv, root, model, esm3_model, device)
+    trainset = initial_epitope3D(args.train_csv, root, model, device)
         
     print(f"--> Xử lý tập Test: {args.test_csv}")
-    testset = initial_epitope3D(args.test_csv, root, model, esm3_model, device)
+    testset = initial_epitope3D(args.test_csv, root, model, device)
         
     trainset = [i for i in trainset if len(i) < 1024 and getattr(i, 'label', None) is not None and i.label.sum() > 0]
     testset = [i for i in testset if len(i) < 1024 and getattr(i, 'label', None) is not None and i.label.sum() > 0]
@@ -136,4 +127,4 @@ if __name__ == "__main__":
         pk.dump(testset, f)
 
     np.save(f'{root}/cross-validation.npy', idx)
-    print(f"[INFO] TỔNG KẾT -> Train: {len(trainset)} chains, Test: {len(testset)} chains, CV idx shape: {idx.shape}")    
+    print(f"[INFO] TỔNG KẾT -> Train: {len(trainset)} chains, Test: {len(testset)} chains, CV idx shape: {idx.shape}") 

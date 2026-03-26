@@ -1,6 +1,11 @@
 #preprocess.py
 import os
 import numpy as np
+from transformers import AutoTokenizer, EsmModel
+
+# Khởi tạo SaProt (Bạn nên để global hoặc truyền vào hàm để tránh load nhiều lần)
+saprot_tokenizer = AutoTokenizer.from_pretrained("westlake-repl/SaProt_650M_AF2")
+saprot_model = EsmModel.from_pretrained("westlake-repl/SaProt_650M_AF2")
 DICT={
     'ALA': 'A', 'CYS': 'C', 'CCS': 'C', 'ASP': 'D', 'GLU': 'E', 'PHE': 'F',
     'GLY': 'G', 'HIS': 'H', 'ILE': 'I', 'LYS': 'K', 'LEU': 'L',
@@ -83,3 +88,30 @@ def get_dssp(ID,root):
     dssp_seq, dssp_matrix,position = process_dssp(f"{root}/dssp/" + ID + ".dssp")
     np.save(f"{root}/dssp/" + ID, transform_dssp(dssp_matrix))
     np.save(f"{root}/dssp/"+ID+"_pos",position)
+
+def get_foldseek_3di(pdb_path):
+    """Sử dụng Foldseek để lấy chuỗi 3Di từ file PDB"""
+    import subprocess
+    # Lệnh foldseek để trích xuất cấu trúc thành chuỗi ký tự 3Di
+    cmd = f"foldseek structureto3di --format-mode 0 {pdb_path} tmp.tsv && cut -f3 tmp.tsv && rm tmp.tsv"
+    try:
+        result = subprocess.check_output(cmd, shell=True).decode().strip()
+        return result.split('\n')[-1] # Lấy chuỗi 3Di
+    except:
+        return None
+def extract_saprot_feat(pdb_id, amino_seq, root, device='cuda'):
+    pdb_path = f"{root}/purePDB/{pdb_id}.pdb"
+    seq_3di = get_foldseek_3di(pdb_path)
+    if seq_3di is None: return None
+    
+    # Format SaProt: kết hợp axit amin (chữ thường) và 3Di (chữ hoa)
+    # Ví dụ: "aV lA sS..."
+    combined_seq = " ".join([f"{a.lower()}{s.upper()}" for a, s in zip(amino_seq, seq_3di)])
+    
+    saprot_model.to(device)
+    inputs = saprot_tokenizer(combined_seq, return_tensors="pt").to(device)
+    with torch.no_grad():
+        outputs = saprot_model(**inputs)
+    
+    # Lấy embedding, bỏ BOS/EOS tokens ([1:-1])
+    return outputs.last_hidden_state[0, 1:-1, :].cpu()
