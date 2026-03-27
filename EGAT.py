@@ -123,11 +123,9 @@ class EGAT(nn.Module):
         self.conv2 = DenseGVPConv(nhid, nfeat, dropout)
     def forward(self, x, edge_attr, coord):
         x_cut=x
-        v = torch.randn(x.shape[0], 1, 3, device=x.device) 
+        v = coord.unsqueeze(1).to(x.device)
         
-        # Chạy qua 2 lớp GVP
         s, v = self.conv1(x, edge_attr, v)
         s, v = self.conv2(s, edge_attr, v)
         
-        # Trả về scalar (s) + Residual Connection giống hệt form cũ
         return s + x_cut, edge_attr
