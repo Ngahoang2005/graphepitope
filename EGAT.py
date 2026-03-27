@@ -45,36 +45,53 @@ class GVP(nn.Module):
         
         s_out = F.relu(s_out)
         return s_out, v_out
-
 class DenseGVPConv(nn.Module):
-    """Lớp chập GVP cho ma trận Dense"""
+    """Lớp chập GVP tối ưu hóa bộ nhớ (Sparse-aware Dense Conv)"""
     def __init__(self, in_features, out_features, dropout):
         super().__init__()
         self.dropout = nn.Dropout(dropout)
+        self.out_features = out_features
         
-        # TRẢ LẠI vi=1, vo=1 (Vì ta chỉ có 1 vector chỉ hướng từ node A đến node B)
+        # vi=1, vo=1 (1 vector hướng)
         self.message = GVP((in_features * 2, 1), (out_features, 1))
         self.update = GVP((out_features, 1), (out_features, 1))
 
     def forward(self, h, edge_attr, v):
         N = h.shape[0]
-        h_exp1 = h.unsqueeze(1).expand(N, N, -1)
-        h_exp2 = h.unsqueeze(0).expand(N, N, -1)
-        s_msg = torch.cat([h_exp1, h_exp2], dim=-1) # [N, N, 2*in_features]
         
-        # Đảm bảo v có shape [N, 1, 3]
+        # 1. TÌM CÁC CẠNH THỰC SỰ TỒN TẠI (Lọc Sparse)
+        adj = (edge_attr.sum(dim=0) > 0) # [N, N]
+        src, dst = adj.nonzero(as_tuple=True) # Chỉ lấy index có liên kết
+        
+        if len(src) == 0: # Tránh lỗi đồ thị đéo có cạnh nào
+            return self.dropout(self.update((h, v))[0]), v
+
+        # 2. TẠO MESSAGE CHỈ CHO CÁC CẠNH TỒN TẠI
+        s_src, s_dst = h[src], h[dst]
+        s_msg = torch.cat([s_src, s_dst], dim=-1) # [Số cạnh, 2*in_features]
+        
         if v.dim() == 2:
-            v = v.unsqueeze(1) 
+            v = v.unsqueeze(1) # [N, 1, 3]
             
-        v_msg = v.unsqueeze(1) - v.unsqueeze(0) # [N, N, 1, 3]
+        v_src, v_dst = v[src], v[dst]
+        v_msg = v_src - v_dst # [Số cạnh, 1, 3]
         
+        # 3. CHẠY QUA GVP (Cực kỳ nhẹ RAM vì chỉ tính trên Số cạnh << N^2)
         s_m, v_m = self.message((s_msg, v_msg))
         
-        mask = (edge_attr.sum(dim=0) > 0).float() 
+        # 4. GỘP THÔNG TIN VỀ NODE ĐÍCH (Scatter Add)
+        s_pool = torch.zeros(N, self.out_features, device=h.device)
+        v_pool = torch.zeros(N, 1, 3, device=v.device)
         
-        s_pool = (s_m * mask.unsqueeze(-1)).sum(dim=1) / (mask.sum(dim=1, keepdim=True) + 1e-8)
-        v_pool = (v_m * mask.unsqueeze(-1).unsqueeze(-1)).sum(dim=1) / (mask.sum(dim=1, keepdim=True).unsqueeze(-1) + 1e-8)
+        s_pool.index_add_(0, dst, s_m)
+        v_pool.index_add_(0, dst, v_m)
         
+        # Chuẩn hóa theo bậc (degree) của node
+        deg = adj.sum(dim=0).unsqueeze(-1).float() + 1e-8 # [N, 1]
+        s_pool = s_pool / deg
+        v_pool = v_pool / deg.unsqueeze(-1) # [N, 1, 1]
+        
+        # 5. CẬP NHẬT NODE
         s_out, v_out = self.update((s_pool, v_pool))
         s_out = self.dropout(s_out)
         
