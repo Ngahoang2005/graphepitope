@@ -11,14 +11,21 @@ import torch.nn.functional as F
 from tqdm import tqdm,trange
 from preprocess import *
 from graph_construction import calcPROgraph
-from torch_geometric.data import Data, Batch
 import requests as rq
 from esm.sdk.api import ESMProtein, LogitsConfig
 EMBEDDING_CONFIG = LogitsConfig(
     sequence=True, 
     return_embeddings=True 
 )
-
+# prot_amino2id={
+#     '<pad>': 0, '</s>': 1, '<unk>': 2, 'A': 3,
+#     'L': 4, 'G': 5, 'V': 6, 'S': 7,
+#     'R': 8, 'E': 9, 'D': 10, 'T': 11,
+#     'I': 12, 'P': 13, 'K': 14, 'F': 15,
+#     'Q': 16, 'N': 17, 'Y': 18, 'M': 19,
+#     'H': 20, 'W': 21, 'C': 22, 'X': 23,
+#     'B': 24, 'O': 25, 'U': 26, 'Z': 27
+# }
 amino2id={
     '<null_0>': 0, '<pad>': 1, '<eos>': 2, '<unk>': 3,
     'L': 4, 'A': 5, 'G': 6, 'V': 7, 'S': 8, 'E': 9, 'R': 10, 
@@ -35,7 +42,8 @@ class chain:
         self.site={}
         self.date=''
         self.length=0
-        self.pos=None
+        self.adj=None
+        self.edge=None
         self.feat=None
         self.saprot=None
         self.name=''
@@ -66,12 +74,21 @@ class chain:
 
         try:
             with torch.no_grad():
+                # Bước 1: Đóng gói chuỗi thành ESMProtein
                 protein = ESMProtein(sequence=self.sequence)
+                
+                # Bước 2: Encode thành Tensor (Chạy ở client)
                 protein_tensor = model.encode(protein)
+                
+                # Bước 3: Gọi API lấy Logits/Embeddings (Chạy ở server Forge)
                 output = model.logits(protein_tensor, EMBEDDING_CONFIG)
+                
+                # Bước 4: Lấy embedding ra. 
+                # Thường output.embeddings là một torch.Tensor
                 feat = output.embeddings.cpu().squeeze(0) 
                 
                 torch.save(feat, target_file)
+                # print(f"Successfully extracted {self.name}")
 
         except Exception as e:
             print(f"❌ Lỗi API tại {self.name}: {e}")
@@ -81,13 +98,16 @@ class chain:
         self.saprot = torch.load(f'{path}/saprot/{self.name}.pt')
     def load_feat(self,path):
         self.feat = torch.load(f'{path}/feat/{self.name}_esmc6b.ts')
-    def load_graph(self, path):
-        """Nạp tọa độ từ file .graph (phiên bản mới chỉ chứa 'pos')"""
-        graph = torch.load(f'{path}/graph/{self.name}.graph')
-        self.pos = graph['pos']
+    def load_adj(self,path,self_cycle=False):
+        graph=torch.load(f'{path}/graph/{self.name}.graph')
+        self.adj=graph['adj'].to_dense()
+        self.edge=graph['edge'].to_dense()
+        if not self_cycle:
+            self.adj[range(len(self)),range(len(self))]=0
+            self.edge[range(len(self)),range(len(self))]=0
     def get_adj(self,path,dseq=3,dr=10,dlong=5,k=10):
-        graph = calcPROgraph(self.coord)
-        torch.save(graph, f'{path}/graph/{self.name}.graph')
+        graph=calcPROgraph(self.sequence,self.coord,dseq,dr,dlong,k)
+        torch.save(graph,f'{path}/graph/{self.name}.graph')
     def update(self,pos,amino):
         if amino not in DICT.keys():
             return
@@ -115,14 +135,14 @@ class chain:
     def __getitem__(self, idx):
         f = self.feat
         d = self.saprot
-        p = self.pos
+        
         if f.shape[0] == d.shape[0] + 2:
             f = f[1:-1, :]
             
         min_len = min(f.shape[0], d.shape[0])
         f = f[:min_len, :]
         d = d[:min_len, :]
-        p = p[:min_len, :]
+        
         try:
             full_feat = torch.cat([f, d], dim=1)
         except RuntimeError:
@@ -131,16 +151,12 @@ class chain:
 
         target_label = self.label[:min_len]
         
-        return full_feat, p, target_label
+        return full_feat, self.adj, target_label
 def collate_fn(batch):
-    data_list = []
-    for item in batch:
-        data_list.append(Data(
-            x=item['x'], 
-            pos=item['pos'], 
-            y=item['y']
-        ))
-    return Batch.from_data_list(data_list)
+    edges = [item['edge'] for item in batch]
+    feats = [item['feat'] for item in batch]
+    labels = torch.cat([item['label'] for item in batch],0)
+    return feats,edges,labels
 
 def extract_chain(root,pid,chain,force=False):
     if not force and os.path.exists(f'{root}/purePDB/{pid}_{chain}.pdb'):
