@@ -121,7 +121,7 @@ class EGAT(nn.Module):
         self.dropout = dropout
         self.conv1 = DenseGVPConv(nfeat, nhid, dropout)
         self.conv2 = DenseGVPConv(nhid, nfeat, dropout)
-    def forward(self, x, edge_attr):
+    def forward(self, x, edge_attr, coord):
         x_cut=x
         v = torch.randn(x.shape[0], 1, 3, device=x.device) 
         
