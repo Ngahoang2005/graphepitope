@@ -30,7 +30,8 @@ class GVP(nn.Module):
     def forward(self, x):
         s, v = x
         v_h = self.wh(v)
-        v_n = torch.norm(v_h, dim=-1)
+     
+        v_n = torch.norm(v_h, dim=-1, keepdim=True)
         s_out = self.ws(torch.cat([s, v_n], dim=-1))
         v_out = self.wv(v_h)
         s_out = F.relu(s_out)
