@@ -16,7 +16,7 @@ class AE(nn.Module):
     def forward(self, x):
         return self.net(x)
 class GVP(nn.Module):
-    """Lõi Geometric Vector Perceptron"""
+    """Lõi Geometric Vector Perceptron chuẩn"""
     def __init__(self, in_dims, out_dims, h_dim=None):
         super().__init__()
         self.si, self.vi = in_dims
@@ -29,11 +29,20 @@ class GVP(nn.Module):
 
     def forward(self, x):
         s, v = x
-        v_h = self.wh(v)
-     
-        v_n = torch.norm(v_h, dim=-1, keepdim=True)
+        # v có shape [..., vi, 3]. Phép Linear áp dụng cho chiều 'vi' nên phải lật (transpose)
+        v_trans = v.transpose(-1, -2) # [..., 3, vi]
+        v_h_trans = self.wh(v_trans)  # [..., 3, h_dim]
+        v_h = v_h_trans.transpose(-1, -2) # [..., h_dim, 3]
+        
+        # Tính độ dài vector trong không gian 3D (chiều cuối cùng)
+        v_n = torch.norm(v_h, dim=-1) # [..., h_dim]
+        
+        # Nối Scalar và Vector Norm
         s_out = self.ws(torch.cat([s, v_n], dim=-1))
-        v_out = self.wv(v_h)
+        
+        v_out_trans = self.wv(v_h.transpose(-1, -2)) # [..., 3, vo]
+        v_out = v_out_trans.transpose(-1, -2) # [..., vo, 3]
+        
         s_out = F.relu(s_out)
         return s_out, v_out
 
@@ -43,21 +52,21 @@ class DenseGVPConv(nn.Module):
         super().__init__()
         self.dropout = nn.Dropout(dropout)
         
-        # SỬA Ở ĐÂY: vi=3 (đầu vào x,y,z) và vo=3 (đầu ra x,y,z)
-        self.message = GVP((in_features * 2, 3), (out_features, 3))
-        self.update = GVP((out_features, 3), (out_features, 3))
+        # TRẢ LẠI vi=1, vo=1 (Vì ta chỉ có 1 vector chỉ hướng từ node A đến node B)
+        self.message = GVP((in_features * 2, 1), (out_features, 1))
+        self.update = GVP((out_features, 1), (out_features, 1))
 
     def forward(self, h, edge_attr, v):
         N = h.shape[0]
-        # Scalar message
         h_exp1 = h.unsqueeze(1).expand(N, N, -1)
         h_exp2 = h.unsqueeze(0).expand(N, N, -1)
-        s_msg = torch.cat([h_exp1, h_exp2], dim=-1) 
+        s_msg = torch.cat([h_exp1, h_exp2], dim=-1) # [N, N, 2*in_features]
         
-        # Vector message: [N, N, 3]
-        # SỬA LỖI DIM: Bỏ cái .unsqueeze(2) nếu v đã có shape [N, 3]
-        # Hoặc đảm bảo v_msg có shape [N, N, 3]
-        v_msg = v.unsqueeze(1) - v.unsqueeze(0) # [N, N, 3]
+        # Đảm bảo v có shape [N, 1, 3]
+        if v.dim() == 2:
+            v = v.unsqueeze(1) 
+            
+        v_msg = v.unsqueeze(1) - v.unsqueeze(0) # [N, N, 1, 3]
         
         s_m, v_m = self.message((s_msg, v_msg))
         
