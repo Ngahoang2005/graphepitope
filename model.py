@@ -70,7 +70,7 @@ class GraphBepi(pl.LightningModule):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, V, edge):
+    def forward(self, V, edge, coord):
         h = []
         V = pad_sequence(V, batch_first=True, padding_value=0).float()
         mask = V.sum(-1) != 0
@@ -89,7 +89,7 @@ class GraphBepi(pl.LightningModule):
             
             # CỨU CÁNH NAN AMP: Tạm thời tắt 16-bit khi đi qua mạng EGAT
             with torch.cuda.amp.autocast(enabled=False):
-                x_gcn, E = self.gat(x_gcn.float(), E.float())
+                x_gcn, E = self.gat(x_gcn.float(), E.float(), coord[i] if coord is not None else None)
                 
             x_gcns.append(x_gcn)
             
@@ -158,8 +158,8 @@ class GraphBepi(pl.LightningModule):
         return gcn_outs
 
     def training_step(self, batch, batch_idx): 
-        feat, edge, y = batch
-        pred = self(feat, edge).squeeze(-1) # Nhận Logits
+        feat, edge, coord, y = batch
+        pred = self(feat, edge, coord).squeeze(-1) # Nhận Logits
         loss = self.loss_fn(pred, y.float()) 
         self.log('train_loss', loss.detach().cpu().item(), on_step=False, on_epoch=True, prog_bar=False, logger=True)
         

@@ -155,6 +155,7 @@ class chain:
 def collate_fn(batch):
     edges = [item['edge'] for item in batch]
     feats = [item['feat'] for item in batch]
+    coords = [item['coord'] for item in batch]
     labels = torch.cat([item['label'] for item in batch],0)
     return feats,edges,labels
 

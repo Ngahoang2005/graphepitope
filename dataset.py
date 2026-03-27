@@ -75,6 +75,7 @@ class PDB(Dataset):
             'label': seq.label[:min_len], 
             'adj': seq.adj,
             'edge': seq.edge if hasattr(seq, 'edge') else None,
+            'coord': seq.coord[:min_len] if hasattr(seq, 'coord') else None,
         }
         
 if __name__ == "__main__":
