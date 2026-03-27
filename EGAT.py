@@ -37,29 +37,31 @@ class GVP(nn.Module):
         return s_out, v_out
 
 class DenseGVPConv(nn.Module):
-    """Lớp chập (Convolution) dựa trên GVP cho ma trận Dense (vì edge_attr của mày là Dense)"""
+    """Lớp chập GVP cho ma trận Dense"""
     def __init__(self, in_features, out_features, dropout):
         super().__init__()
         self.dropout = nn.Dropout(dropout)
-        self.message = GVP((in_features * 2, 1), (out_features, 1))
-        self.update = GVP((out_features, 1), (out_features, 1))
+        
+        # SỬA Ở ĐÂY: vi=3 (đầu vào x,y,z) và vo=3 (đầu ra x,y,z)
+        self.message = GVP((in_features * 2, 3), (out_features, 3))
+        self.update = GVP((out_features, 3), (out_features, 3))
 
     def forward(self, h, edge_attr, v):
         N = h.shape[0]
-        # Tạo message scalar (Nối node nguồn và node đích)
+        # Scalar message
         h_exp1 = h.unsqueeze(1).expand(N, N, -1)
         h_exp2 = h.unsqueeze(0).expand(N, N, -1)
-        s_msg = torch.cat([h_exp1, h_exp2], dim=-1) # [N, N, 2*in_features]
+        s_msg = torch.cat([h_exp1, h_exp2], dim=-1) 
         
-        # Tạo message vector (Khoảng cách giữa các node)
-        v_msg = v.unsqueeze(1).expand(N, N, -1, -1) - v.unsqueeze(0).expand(N, N, -1, -1)
+        # Vector message: [N, N, 3]
+        # SỬA LỖI DIM: Bỏ cái .unsqueeze(2) nếu v đã có shape [N, 3]
+        # Hoặc đảm bảo v_msg có shape [N, N, 3]
+        v_msg = v.unsqueeze(1) - v.unsqueeze(0) # [N, N, 3]
         
         s_m, v_m = self.message((s_msg, v_msg))
         
-        # Tính mask từ edge_attr (edge_attr có shape [efeat, N, N])
         mask = (edge_attr.sum(dim=0) > 0).float() 
         
-        # Gộp thông tin (Pooling)
         s_pool = (s_m * mask.unsqueeze(-1)).sum(dim=1) / (mask.sum(dim=1, keepdim=True) + 1e-8)
         v_pool = (v_m * mask.unsqueeze(-1).unsqueeze(-1)).sum(dim=1) / (mask.sum(dim=1, keepdim=True).unsqueeze(-1) + 1e-8)
         
@@ -121,10 +123,14 @@ class EGAT(nn.Module):
         self.dropout = dropout
         self.conv1 = DenseGVPConv(nfeat, nhid, dropout)
         self.conv2 = DenseGVPConv(nhid, nfeat, dropout)
-    def forward(self, x, edge_attr, coord):
-        x_cut=x
-        v = coord.unsqueeze(1).to(x.device)
+    def forward(self, x, edge_attr, coord): 
+        x_cut = x
         
+        # Đảm bảo v là [N, 3]
+        v = coord.to(x.device).float() 
+        if v.dim() == 3: # Nếu lỡ có shape [1, N, 3] thì bóp nó lại
+            v = v.squeeze(0)
+            
         s, v = self.conv1(x, edge_attr, v)
         s, v = self.conv2(s, edge_attr, v)
         
