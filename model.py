@@ -52,7 +52,7 @@ class GraphBepi(pl.LightningModule):
         self.W_v = nn.Linear(feat_dim, hidden_dim, bias=bias)
         self.W_u1 = AE(exfeat_dim, hidden_dim, hidden_dim, bias=bias)
         self.edge_linear = nn.Sequential(
-            nn.Linear(edge_dim, hidden_dim//4, bias=True),
+            nn.Linear(edge_dim, hidden_dim//4, bias=False),
             nn.ELU(),
         )
         self.gat = EGAT(2*hidden_dim, hidden_dim, hidden_dim//4, dropout)
