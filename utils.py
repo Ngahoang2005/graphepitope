@@ -45,6 +45,7 @@ class chain:
         self.adj=None
         self.edge=None
         self.feat=None
+        self.coord=None
         self.saprot=None
         self.name=''
         self.chain_name=''
@@ -157,7 +158,7 @@ def collate_fn(batch):
     feats = [item['feat'] for item in batch]
     coords = [item['coord'] for item in batch]
     labels = torch.cat([item['label'] for item in batch],0)
-    return feats,edges,labels
+    return feats,edges,coords,labels
 
 def extract_chain(root,pid,chain,force=False):
     if not force and os.path.exists(f'{root}/purePDB/{pid}_{chain}.pdb'):

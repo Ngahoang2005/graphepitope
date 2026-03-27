@@ -89,7 +89,7 @@ class GraphBepi(pl.LightningModule):
             
             # CỨU CÁNH NAN AMP: Tạm thời tắt 16-bit khi đi qua mạng EGAT
             with torch.cuda.amp.autocast(enabled=False):
-                x_gcn, E = self.gat(x_gcn.float(), E.float(), coord[i] if coord is not None else None)
+                x_gcn, E = self.gat(x_gcn.float(), E.float(),coord[i].float())
                 
             x_gcns.append(x_gcn)
             
@@ -171,8 +171,8 @@ class GraphBepi(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        feat, edge, y = batch
-        pred = self(feat, edge).squeeze(-1) 
+        feat, edge, coord, y = batch
+        pred = self(feat, edge, coord).squeeze(-1) 
         
         # BẮT BUỘC lưu Logits, KHÔNG Sigmoid ở đây
         self.val_preds.append(pred.detach()) 
@@ -199,8 +199,8 @@ class GraphBepi(pl.LightningModule):
             print(f"Epoch {self.current_epoch} | val_loss {loss:.4f} | AUROC {result['AUROC']:.4f} | AUPRC {result['AUPRC']:.4f}")
 
     def test_step(self, batch, batch_idx):
-        feat, edge, y = batch
-        pred = self(feat, edge).squeeze(-1)
+        feat, edge, coord, y = batch
+        pred = self(feat, edge, coord).squeeze(-1)
         self.test_preds.append(pred.detach())
         self.test_labels.append(y.detach())
         return
